@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name         PbN Command Buttons
 // @namespace    stoia.red
-// @version      1.1.0
-// @description  Adds quick-command buttons (/ooc /say /emote /pose ...) above the MUSH input box.
+// @version      1.2.0
+// @description  Adds quick-command buttons (/ooc /say /emote /pose ...) above the MUSH input box. Buttons are editable in-page via the userscript menu (no script editing needed).
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
-// @grant        none
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_registerMenuCommand
 // @downloadURL  https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-command-buttons.user.js
 // @updateURL    https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-command-buttons.user.js
 // ==/UserScript==
@@ -17,13 +19,18 @@
   // CONFIG
   // ----------------------------------------------------------------------
 
-  // The commands to expose. `label` is the button text, `cmd` is what gets
-  // pasted (a trailing space is added automatically). Add/remove freely.
+  // Default commands, used on first run only. After that the live list is
+  // read from userscript storage (GM_getValue) and can be edited in-page via
+  // the userscript menu: Violentmonkey/Tampermonkey icon -> "Edit command
+  // buttons". Edits persist across reloads and browser restarts.
+  //
+  // `label` is the button text, `cmd` is what gets pasted (a trailing space
+  // is added automatically).
   // Firing modes (optional, mutually exclusive):
   //   submit: true  -> paste + Enter immediately (fire-and-forget, no arg)
   //   expand: true  -> 1st click opens an inline field, 2nd click sends
   //                    cmd + typed text. Fast double-click sends bare cmd.
-  const COMMANDS = [
+  const DEFAULT_COMMANDS = [
     { label: 'OOC',     cmd: '/ooc'     },
     { label: 'LOOC',    cmd: '/looc'    },
     { label: 'Say',     cmd: '/say'     },
@@ -48,11 +55,62 @@
   const SWAP_LEADING_COMMAND = true;
 
   // ----------------------------------------------------------------------
-  // INTERNALS
+  // STORAGE (user-editable command list)
   // ----------------------------------------------------------------------
 
   const BAR_ID = 'pbn-cmd-bar';
-  const knownCmds = COMMANDS.map(c => c.cmd);
+  const EDITOR_ID = 'pbn-cmd-editor';
+  const STORAGE_KEY = 'pbn_commands';
+
+  // Validate a parsed command list before trusting it. Returns true only for
+  // a non-empty array of {label, cmd} objects with sane optional flags.
+  function validateCommands(arr) {
+    if (!Array.isArray(arr) || arr.length === 0) return false;
+    return arr.every(c =>
+      c && typeof c === 'object' &&
+      typeof c.label === 'string' && c.label.trim() !== '' &&
+      typeof c.cmd === 'string' && c.cmd.trim() !== '' &&
+      (c.submit === undefined || typeof c.submit === 'boolean') &&
+      (c.expand === undefined || typeof c.expand === 'boolean'));
+  }
+
+  function defaultsCopy() {
+    return DEFAULT_COMMANDS.map(c => Object.assign({}, c));
+  }
+
+  // Read the stored list, falling back to defaults if absent/corrupt.
+  function loadCommands() {
+    try {
+      if (typeof GM_getValue === 'function') {
+        const raw = GM_getValue(STORAGE_KEY, '');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (validateCommands(parsed)) return parsed;
+        }
+      }
+    } catch (e) { /* fall through to defaults */ }
+    return defaultsCopy();
+  }
+
+  // Persist a (pre-validated) list and refresh derived state.
+  function saveCommands(arr) {
+    commands = arr;
+    refreshKnownCmds();
+    try {
+      if (typeof GM_setValue === 'function') {
+        GM_setValue(STORAGE_KEY, JSON.stringify(arr));
+      }
+    } catch (e) { /* storage unavailable; live list still updates */ }
+  }
+
+  // Live command list + the set of known command prefixes (for swapping).
+  let commands = loadCommands();
+  let knownCmds = commands.map(c => c.cmd);
+  function refreshKnownCmds() { knownCmds = commands.map(c => c.cmd); }
+
+  // ----------------------------------------------------------------------
+  // INTERNALS
+  // ----------------------------------------------------------------------
 
   // Set a value on a native input/textarea so Vue's v-model notices it.
   function setNativeValue(el, value) {
@@ -220,13 +278,18 @@
       'padding:6px 4px', 'align-items:center',
     ].join(';');
 
-    for (const { label, cmd, submit, expand } of COMMANDS) {
+    for (const { label, cmd, submit, expand } of commands) {
       const el = expand
         ? makeExpandButton(input, label, cmd)
         : makePlainButton(input, label, cmd, submit);
       bar.appendChild(el);
     }
     return bar;
+  }
+
+  function removeBar() {
+    const existing = document.getElementById(BAR_ID);
+    if (existing) existing.remove();
   }
 
   function mount() {
@@ -236,11 +299,152 @@
     const existing = document.getElementById(BAR_ID);
     // Re-mount if the bar is gone or detached from the current input's area.
     if (existing && existing.isConnected) return;
+    removeBar();
 
     const bar = buildBar(input);
     // Place the bar just above the input's field container.
     const anchor = input.closest('.q-field') || input.parentElement || input;
     anchor.parentElement.insertBefore(bar, anchor);
+  }
+
+  // Rebuild the bar from the current command list (after an edit).
+  function rerender() {
+    removeBar();
+    mount();
+  }
+
+  // ----------------------------------------------------------------------
+  // SETTINGS EDITOR (opened from the userscript menu)
+  // ----------------------------------------------------------------------
+
+  function modalButton(text, primary) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = text;
+    b.style.cssText = [
+      'cursor:pointer', 'font:13px/1 inherit', 'padding:7px 14px',
+      'border-radius:5px', 'border:1px solid rgba(255,255,255,0.25)',
+      primary ? 'background:#3a6df0' : 'background:rgba(255,255,255,0.10)',
+      'color:#fff', 'flex:0 0 auto',
+    ].join(';');
+    return b;
+  }
+
+  function openEditor() {
+    if (document.getElementById(EDITOR_ID)) return; // already open
+
+    const overlay = document.createElement('div');
+    overlay.id = EDITOR_ID;
+    overlay.style.cssText = [
+      'position:fixed', 'inset:0', 'z-index:2147483647',
+      'display:flex', 'align-items:center', 'justify-content:center',
+      'background:rgba(0,0,0,0.6)', 'font:13px/1.5 sans-serif',
+    ].join(';');
+
+    const panel = document.createElement('div');
+    panel.style.cssText = [
+      'width:min(560px,92vw)', 'max-height:85vh', 'overflow:auto',
+      'box-sizing:border-box', 'padding:18px 20px',
+      'border-radius:8px', 'border:1px solid rgba(255,255,255,0.2)',
+      'background:#1e1e24', 'color:#eee',
+      'box-shadow:0 8px 40px rgba(0,0,0,0.5)',
+    ].join(';');
+
+    const heading = document.createElement('div');
+    heading.textContent = 'Edit command buttons';
+    heading.style.cssText = 'font-size:16px;font-weight:600;margin-bottom:8px;';
+
+    const help = document.createElement('div');
+    help.style.cssText = 'opacity:0.85;margin-bottom:10px;';
+    help.innerHTML =
+      'One entry per button. Each needs <code>"label"</code> (button text) and ' +
+      '<code>"cmd"</code> (what gets pasted). Optional: <code>"submit": true</code> ' +
+      'sends immediately, or <code>"expand": true</code> opens an input field first. ' +
+      'Changes are saved permanently in your userscript manager.';
+
+    const ta = document.createElement('textarea');
+    ta.value = JSON.stringify(commands, null, 2);
+    ta.spellcheck = false;
+    ta.style.cssText = [
+      'width:100%', 'box-sizing:border-box', 'height:300px',
+      'resize:vertical', 'font:12px/1.45 monospace',
+      'padding:8px', 'border-radius:6px',
+      'border:1px solid rgba(255,255,255,0.25)',
+      'background:#13131a', 'color:#eee', 'white-space:pre',
+    ].join(';');
+
+    const msg = document.createElement('div');
+    msg.style.cssText = 'min-height:18px;margin:8px 0;white-space:pre-wrap;';
+
+    function showError(text) { msg.style.color = '#ff8080'; msg.textContent = text; }
+    function showInfo(text) { msg.style.color = '#8fdc8f'; msg.textContent = text; }
+
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:8px;align-items:center;';
+
+    const resetBtn = modalButton('Reset to defaults', false);
+    const spacer = document.createElement('div');
+    spacer.style.cssText = 'flex:1 1 auto;';
+    const cancelBtn = modalButton('Cancel', false);
+    const saveBtn = modalButton('Save', true);
+
+    function close() {
+      document.removeEventListener('keydown', onKey, true);
+      overlay.remove();
+    }
+
+    function doSave() {
+      let parsed;
+      try {
+        parsed = JSON.parse(ta.value);
+      } catch (e) {
+        showError('Invalid JSON: ' + e.message);
+        return;
+      }
+      if (!validateCommands(parsed)) {
+        showError('Each entry needs a non-empty "label" and "cmd". ' +
+                  '"submit"/"expand" must be true or false if present.');
+        return;
+      }
+      saveCommands(parsed);
+      rerender();
+      close();
+    }
+
+    resetBtn.addEventListener('click', () => {
+      ta.value = JSON.stringify(defaultsCopy(), null, 2);
+      showInfo('Defaults loaded — click Save to apply.');
+    });
+    cancelBtn.addEventListener('click', close);
+    saveBtn.addEventListener('click', doSave);
+
+    // Click on the dimmed backdrop (but not the panel) closes without saving.
+    overlay.addEventListener('mousedown', (e) => {
+      if (e.target === overlay) close();
+    });
+
+    function onKey(e) {
+      if (e.key === 'Escape') { e.preventDefault(); close(); }
+    }
+    document.addEventListener('keydown', onKey, true);
+
+    row.appendChild(resetBtn);
+    row.appendChild(spacer);
+    row.appendChild(cancelBtn);
+    row.appendChild(saveBtn);
+
+    panel.appendChild(heading);
+    panel.appendChild(help);
+    panel.appendChild(ta);
+    panel.appendChild(msg);
+    panel.appendChild(row);
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+    ta.focus();
+  }
+
+  if (typeof GM_registerMenuCommand === 'function') {
+    GM_registerMenuCommand('Edit command buttons', openEditor);
   }
 
   // SPA: the input mounts/unmounts on navigation, so keep checking.
