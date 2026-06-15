@@ -28,7 +28,7 @@
     { label: 'LOOC',    cmd: '/looc'    },
     { label: 'Say',     cmd: '/say'     },
     { label: 'Emote',   cmd: '/emote'   },
-    { label: 'Hide',    cmd: '/hide'    },
+    { label: 'Hide',    cmd: '/hide',            submit: true },
     { label: 'Look',    cmd: '/look',            expand: true },
     { label: 'Auspex',  cmd: '/auspex heighten', submit: true },
     { label: 'News',    cmd: '/news',            expand: true },
