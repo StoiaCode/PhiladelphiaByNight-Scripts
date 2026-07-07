@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Typing Indicator De-Shift
 // @namespace    stoia.red
-// @version      1.4.0
+// @version      1.5.0
 // @description  Stops the "X is typing" indicator from nudging the command input. Floats it above the box instead.
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -23,55 +23,38 @@
   const TYPING_SELECTOR = '.typing-indicator';
   const INPUT_SELECTOR  = 'textarea.q-field__native';
 
-  const style = document.createElement('style');
-  style.textContent = HIDE_ENTIRELY
-    ? `${TYPING_SELECTOR}{display:none !important;}`
-    : `${TYPING_SELECTOR}{
-         position: fixed !important;
-         z-index: 9999 !important;
-         pointer-events: none !important;
-         white-space: nowrap !important;
-         font-family: system-ui, ui-sans-serif, sans-serif !important;
-         font-style: normal !important;
-         font-size: 13px !important;
-         font-weight: 600 !important;
-         line-height: 1.4 !important;
-         letter-spacing: 0.01em !important;
-         color: #ffffff !important;
-         text-shadow: 0 1px 3px rgba(0,0,0,0.9) !important;
-         background: rgba(0,0,0,0.55) !important;
-         padding: 2px 8px !important;
-         border-radius: 4px !important;
-         opacity: 1 !important;
-       }`;
-  document.head.appendChild(style);
+  if (HIDE_ENTIRELY) {
+    const s = document.createElement('style');
+    s.textContent = `${TYPING_SELECTOR}{display:none !important;}`;
+    document.head.appendChild(s);
+    return;
+  }
 
-  if (HIDE_ENTIRELY) return;
-
-  // Font props applied to the element AND every descendant — Vue scoped styles
-  // target inner spans explicitly, which beats inherited values from the parent.
-  const FONT_STYLES = {
-    fontFamily:    'system-ui, ui-sans-serif, sans-serif',
-    fontStyle:     'normal',
-    fontSize:      '13px',
-    fontWeight:    '600',
-    lineHeight:    '1.4',
-    letterSpacing: '0.01em',
-  };
-
+  // Inline styles beat any stylesheet rule regardless of specificity.
+  // Applied to the element AND every descendant because Vue scoped CSS targets
+  // the inner spans directly, overriding inherited values from the parent.
   function applyStyles(tip) {
-    Object.assign(tip.style, FONT_STYLES, {
+    const shared = {
+      fontFamily:    'system-ui, ui-sans-serif, sans-serif',
+      fontStyle:     'normal',
+      fontSize:      '13px',
+      fontWeight:    '600',
+      lineHeight:    '1.4',
+      letterSpacing: '0.01em',
+    };
+    Object.assign(tip.style, shared, {
+      position:     'fixed',
+      zIndex:       '9999',
+      pointerEvents:'none',
+      whiteSpace:   'nowrap',
       color:        '#ffffff',
       textShadow:   '0 1px 3px rgba(0,0,0,0.9)',
       background:   'rgba(0,0,0,0.55)',
       padding:      '2px 8px',
       borderRadius: '4px',
       opacity:      '1',
-      whiteSpace:   'nowrap',
-      pointerEvents:'none',
-      zIndex:       '9999',
     });
-    tip.querySelectorAll('*').forEach(el => Object.assign(el.style, FONT_STYLES));
+    tip.querySelectorAll('*').forEach(el => Object.assign(el.style, shared));
   }
 
   function reposition() {
@@ -79,22 +62,20 @@
     const input = document.querySelector(INPUT_SELECTOR);
     if (!tip || !input) return;
     applyStyles(tip);
-    // Anchor to the whole control row, not just the textarea.
     const anchor = input.closest('.q-field__control') || input;
     const r = anchor.getBoundingClientRect();
     // Right-align with the control row; pin bottom edge GAP px above its top.
-    tip.style.position = 'fixed';
-    tip.style.left     = 'auto';
-    tip.style.top      = 'auto';
-    tip.style.right    = `${Math.round(window.innerWidth - r.right)}px`;
-    tip.style.bottom   = `${Math.round(window.innerHeight - r.top + GAP)}px`;
+    tip.style.left   = 'auto';
+    tip.style.top    = 'auto';
+    tip.style.right  = `${Math.round(window.innerWidth - r.right)}px`;
+    tip.style.bottom = `${Math.round(window.innerHeight - r.top + GAP)}px`;
   }
 
-  // The span is created/destroyed dynamically, so watch for it and reposition
-  // on anything that can move the input.
+  // The element is created/destroyed dynamically, so watch for it and
+  // reposition on anything that can move the input.
   const observer = new MutationObserver(reposition);
   observer.observe(document.body, { childList: true, subtree: true, characterData: true });
   window.addEventListener('scroll', reposition, true);
   window.addEventListener('resize', reposition);
-  setInterval(reposition, 250); // cheap safety net for missed layout changes
+  setInterval(reposition, 250); // safety net for missed layout changes
 })();
