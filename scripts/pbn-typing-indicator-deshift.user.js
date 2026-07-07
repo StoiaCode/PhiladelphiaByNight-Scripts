@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Typing Indicator De-Shift
 // @namespace    stoia.red
-// @version      1.3.0
+// @version      1.4.0
 // @description  Stops the "X is typing" indicator from nudging the command input. Floats it above the box instead.
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -48,25 +48,30 @@
 
   if (HIDE_ENTIRELY) return;
 
-  // Applied as inline styles so they beat any site stylesheet rule regardless
-  // of specificity — inline always wins.
+  // Font props applied to the element AND every descendant — Vue scoped styles
+  // target inner spans explicitly, which beats inherited values from the parent.
+  const FONT_STYLES = {
+    fontFamily:    'system-ui, ui-sans-serif, sans-serif',
+    fontStyle:     'normal',
+    fontSize:      '13px',
+    fontWeight:    '600',
+    lineHeight:    '1.4',
+    letterSpacing: '0.01em',
+  };
+
   function applyStyles(tip) {
-    const s = tip.style;
-    s.fontFamily     = 'system-ui, ui-sans-serif, sans-serif';
-    s.fontStyle      = 'normal';
-    s.fontSize       = '13px';
-    s.fontWeight     = '600';
-    s.lineHeight     = '1.4';
-    s.letterSpacing  = '0.01em';
-    s.color          = '#ffffff';
-    s.textShadow     = '0 1px 3px rgba(0,0,0,0.9)';
-    s.background     = 'rgba(0,0,0,0.55)';
-    s.padding        = '2px 8px';
-    s.borderRadius   = '4px';
-    s.opacity        = '1';
-    s.whiteSpace     = 'nowrap';
-    s.pointerEvents  = 'none';
-    s.zIndex         = '9999';
+    Object.assign(tip.style, FONT_STYLES, {
+      color:        '#ffffff',
+      textShadow:   '0 1px 3px rgba(0,0,0,0.9)',
+      background:   'rgba(0,0,0,0.55)',
+      padding:      '2px 8px',
+      borderRadius: '4px',
+      opacity:      '1',
+      whiteSpace:   'nowrap',
+      pointerEvents:'none',
+      zIndex:       '9999',
+    });
+    tip.querySelectorAll('*').forEach(el => Object.assign(el.style, FONT_STYLES));
   }
 
   function reposition() {
