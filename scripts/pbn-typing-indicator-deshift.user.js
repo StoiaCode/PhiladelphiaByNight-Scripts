@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Typing Indicator De-Shift
 // @namespace    stoia.red
-// @version      1.2.0
+// @version      1.3.0
 // @description  Stops the "X is typing" indicator from nudging the command input. Floats it above the box instead.
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -48,18 +48,41 @@
 
   if (HIDE_ENTIRELY) return;
 
+  // Applied as inline styles so they beat any site stylesheet rule regardless
+  // of specificity — inline always wins.
+  function applyStyles(tip) {
+    const s = tip.style;
+    s.fontFamily     = 'system-ui, ui-sans-serif, sans-serif';
+    s.fontStyle      = 'normal';
+    s.fontSize       = '13px';
+    s.fontWeight     = '600';
+    s.lineHeight     = '1.4';
+    s.letterSpacing  = '0.01em';
+    s.color          = '#ffffff';
+    s.textShadow     = '0 1px 3px rgba(0,0,0,0.9)';
+    s.background     = 'rgba(0,0,0,0.55)';
+    s.padding        = '2px 8px';
+    s.borderRadius   = '4px';
+    s.opacity        = '1';
+    s.whiteSpace     = 'nowrap';
+    s.pointerEvents  = 'none';
+    s.zIndex         = '9999';
+  }
+
   function reposition() {
     const tip = document.querySelector(TYPING_SELECTOR);
     const input = document.querySelector(INPUT_SELECTOR);
     if (!tip || !input) return;
+    applyStyles(tip);
     // Anchor to the whole control row, not just the textarea.
     const anchor = input.closest('.q-field__control') || input;
     const r = anchor.getBoundingClientRect();
     // Right-align with the control row; pin bottom edge GAP px above its top.
-    tip.style.left   = 'auto';
-    tip.style.top    = 'auto';
-    tip.style.right  = `${Math.round(window.innerWidth - r.right)}px`;
-    tip.style.bottom = `${Math.round(window.innerHeight - r.top + GAP)}px`;
+    tip.style.position = 'fixed';
+    tip.style.left     = 'auto';
+    tip.style.top      = 'auto';
+    tip.style.right    = `${Math.round(window.innerWidth - r.right)}px`;
+    tip.style.bottom   = `${Math.round(window.innerHeight - r.top + GAP)}px`;
   }
 
   // The span is created/destroyed dynamically, so watch for it and reposition
