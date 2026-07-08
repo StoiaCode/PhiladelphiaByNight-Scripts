@@ -1,7 +1,7 @@
 # PhiladelphiaByNight Userscripts
 
 A small collection of userscripts that improve the [Philadelphia by Night](https://philadelphiabynight.net/)
-web client. Both scripts only run on `https://philadelphiabynight.net/*` and
+web client. All scripts only run on `https://philadelphiabynight.net/*` and
 require no account or server-side setup.
 
 ## Requirements
@@ -21,6 +21,7 @@ manager will open an install screen — review it and click **Install**.
 | ------ | ------- |
 | Command Buttons | [`pbn-command-buttons.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-command-buttons.user.js) |
 | Typing Indicator De-Shift | [`pbn-typing-indicator-deshift.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-typing-indicator-deshift.user.js) |
+| Layout Lock | [`pbn-layout-lock.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-layout-lock.user.js) |
 
 Each script declares `@updateURL`/`@downloadURL`, so your manager will pull
 updates automatically when this repo changes. After installing, reload any
@@ -119,6 +120,19 @@ top of the script:
   (default `4`).
 
 To change these, edit the script in your userscript manager's dashboard.
+
+---
+
+## PbN Layout Lock
+
+Locks the play page to exactly the height of your browser window so there is
+never a page-level scrollbar. The chat log shrinks to fill whatever space is
+left after the command bar and tab controls, and scrolls internally. The right
+info panel (room description, map, etc.) scrolls independently — if a room
+description is long enough to force a scroll, it only scrolls that panel, not
+the whole page.
+
+This script has no configurable options.
 
 ---
 
