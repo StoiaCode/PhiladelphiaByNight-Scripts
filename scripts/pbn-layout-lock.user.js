@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Layout Lock
 // @namespace    stoia.red
-// @version      1.0.0
+// @version      1.1.0
 // @description  Locks the play page to viewport height — the chat box shrinks to fit, no page-level scrollbar.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -74,11 +74,17 @@
       flex: 0 0 auto !important;
     }
 
-    /* Right column scrolls internally — its content size never affects the left side */
+    /* Right column scrolls vertically internally — its content never affects the left side.
+       overflow-x: hidden is required: setting overflow-y alone implicitly promotes
+       overflow-x from visible to auto, which causes the sideways scrollbar on wide
+       widgets (map, compass, room image). min-width: 0 stops flex children from
+       forcing the column wider than its allocated share. */
     main.q-page > .col-md-4 {
       height: 100% !important;
       min-height: 0 !important;
+      min-width: 0 !important;
       overflow-y: auto !important;
+      overflow-x: hidden !important;
     }
   `;
   document.head.appendChild(style);
