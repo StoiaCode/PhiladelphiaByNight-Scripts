@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Compass Tools
 // @namespace    stoia.red
-// @version      1.0.1
+// @version      1.0.2
 // @description  Shows destination room names on compass hover and adds Look/Search mode toggle.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -163,19 +163,29 @@
 
   // Re-apply tooltips when compass cells update (room changes, exits change).
   new MutationObserver(mutations => {
+    const toUpdate = new Set();
     for (const m of mutations) {
+      if (m.type === 'attributes') {
+        // aria-label or class changed on a cell — re-tooltip its compass.
+        const compass = m.target.closest?.('.compass');
+        if (compass) toUpdate.add(compass);
+        continue;
+      }
       for (const node of m.addedNodes) {
         if (node.nodeType !== 1) continue;
         if (node.classList?.contains('compass')) { mountAll(); return; }
         if (node.querySelector?.('.compass'))    { mountAll(); return; }
-        // Exit availability can change on existing compass (cell class updates).
         if (node.classList?.contains('compass__cell')) {
-          node.closest('.compass') && applyTooltips(node.closest('.compass'));
-          return;
+          const compass = node.closest('.compass');
+          if (compass) toUpdate.add(compass);
         }
       }
     }
-  }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+    toUpdate.forEach(applyTooltips);
+  }).observe(document.body, {
+    childList: true, subtree: true,
+    attributes: true, attributeFilter: ['class', 'aria-label'],
+  });
 
   mountAll();
 })();
