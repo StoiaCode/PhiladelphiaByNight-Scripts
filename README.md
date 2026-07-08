@@ -23,6 +23,7 @@ manager will open an install screen — review it and click **Install**.
 | Typing Indicator De-Shift | [`pbn-typing-indicator-deshift.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-typing-indicator-deshift.user.js) |
 | Layout Lock | [`pbn-layout-lock.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-layout-lock.user.js) |
 | Chat Log | [`pbn-chat-log.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-chat-log.user.js) |
+| Compass Tools | [`pbn-compass-tools.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-compass-tools.user.js) |
 
 Each script declares `@updateURL`/`@downloadURL`, so your manager will pull
 updates automatically when this repo changes. After installing, reload any
@@ -142,6 +143,28 @@ This script has no configurable options.
 Adds a **Save Log** button to the chat tab bar. Messages are captured to memory as they arrive (timestamped at the moment they appear), and clicking the button downloads the full session as a plain `.txt` file named `pbn-log-YYYY-MM-DD-HHMMSS.txt`.
 
 Nothing is written to browser storage — the log lives in memory only and is gone when the tab closes. Messages already on screen when the script loads are backfilled with the session-start timestamp.
+
+This script has no configurable options.
+
+---
+
+## PbN Compass Tools
+
+Shows the destination room name when you hover over an open compass direction, and adds a **Walk / Look / Search** mode toggle above the compass.
+
+### Destination tooltips
+
+Open compass directions (those that lead somewhere) show a tooltip with the room name on hover — extracted from the button's `aria-label` (`"Go north to Walk-In Freezer"` → tooltip `"Walk-In Freezer"`).
+
+### Mode toggle
+
+Three pill buttons appear above the compass:
+
+- **Walk** (default) — compass clicks navigate normally, exactly as before.
+- **Look** — clicking a direction sends `/look <direction>` to the command input instead of walking.
+- **Search** — clicking a direction sends `/search <direction>` instead of walking.
+
+The active mode is highlighted. The toggle persists for the session (resets to Walk on page reload). It works on every compass instance and survives SPA navigation.
 
 This script has no configurable options.
 
