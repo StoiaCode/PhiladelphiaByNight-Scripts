@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Compass Tools
 // @namespace    stoia.red
-// @version      1.0.3
+// @version      1.0.4
 // @description  Shows destination room names on compass hover and adds Look/Search mode toggle.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -132,15 +132,20 @@
     if (compass.dataset.pbnIntercepted) return;
     compass.dataset.pbnIntercepted = '1';
 
-    compass.addEventListener('click', e => {
+    // pointerdown fires even on disabled buttons; use it to send commands.
+    compass.addEventListener('pointerdown', e => {
       if (mode === 'walk') return;
       const cell = e.target.closest('.compass__cell');
       if (!cell) return;
-      e.preventDefault();
-      e.stopPropagation();
       const dir = DIR[cell.textContent.trim().toUpperCase()];
       if (dir) sendCommand(`/${mode} ${dir}`);
-    }, true); // capture phase
+    }, true);
+
+    // Suppress the click event on enabled cells so Vue doesn't navigate.
+    compass.addEventListener('click', e => {
+      if (mode === 'walk') return;
+      if (e.target.closest('.compass__cell')) { e.preventDefault(); e.stopPropagation(); }
+    }, true);
   }
 
   // --------------------------------------------------------------------------
