@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Compass Tools
 // @namespace    stoia.red
-// @version      1.0.2
+// @version      1.0.3
 // @description  Shows destination room names on compass hover and adds Look/Search mode toggle.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -134,9 +134,7 @@
 
     compass.addEventListener('click', e => {
       if (mode === 'walk') return;
-      // Search works on closed tiles too; look only makes sense on open ones.
-      const selector = mode === 'search' ? '.compass__cell' : '.compass__cell--open';
-      const cell = e.target.closest(selector);
+      const cell = e.target.closest('.compass__cell');
       if (!cell) return;
       e.preventDefault();
       e.stopPropagation();
