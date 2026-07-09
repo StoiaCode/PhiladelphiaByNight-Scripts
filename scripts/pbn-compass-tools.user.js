@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Compass Tools
 // @namespace    stoia.red
-// @version      1.0.4
+// @version      1.0.5
 // @description  Shows destination room names on compass hover and adds Look/Search mode toggle.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -137,7 +137,7 @@
       if (mode === 'walk') return;
       const cell = e.target.closest('.compass__cell');
       if (!cell) return;
-      const dir = DIR[cell.textContent.trim().toUpperCase()];
+      const dir = DIR[cell.textContent.trim().replace(/=+$/, '').toUpperCase()];
       if (dir) sendCommand(`/${mode} ${dir}`);
     }, true);
 
