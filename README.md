@@ -24,6 +24,7 @@ manager will open an install screen — review it and click **Install**.
 | Layout Lock | [`pbn-layout-lock.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-layout-lock.user.js) |
 | Chat Log | [`pbn-chat-log.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-chat-log.user.js) |
 | Compass Tools | [`pbn-compass-tools.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-compass-tools.user.js) |
+| Craft Helper | [`pbn-craft-helper.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-craft-helper.user.js) |
 
 Each script declares `@updateURL`/`@downloadURL`, so your manager will pull
 updates automatically when this repo changes. After installing, reload any
@@ -167,6 +168,30 @@ Three pill buttons appear above the compass:
 The active mode is highlighted. The toggle persists for the session (resets to Walk on page reload). It works on every compass instance and survives SPA navigation.
 
 This script has no configurable options.
+
+---
+
+## PbN Craft Helper
+
+Adds a small panel above the command input to handle the multi-step crafting workflow without typing.
+
+### Layout
+
+```
+Craft [▲]
+[recipe name input          ] [▶ Start]   3 started
+[Continue] [Careful] [Controlled] [Rush] [Abandon]
+```
+
+- **Recipe field** — type the recipe name once; it's saved in your browser and pre-filled on every reload.
+- **▶ Start** — sends `craft start <recipe>`. Also triggers when you press Enter in the recipe field.
+- **Continue** — sends `craft continue` (used twice per cycle: once after starting, once after choosing).
+- **Careful / Controlled / Rush** — sends the corresponding `craft choose` command.
+- **Abandon** — sends `craft cancel` to abort mid-craft.
+- **Counter** — tracks how many crafts you've started this session. Click it to reset to zero.
+- **▲ / ▼** — collapses or expands the panel.
+
+The panel starts expanded and collapses to a single header line when you don't need it.
 
 ---
 
