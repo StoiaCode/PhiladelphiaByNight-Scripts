@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Craft Helper
 // @namespace    stoia.red
-// @version      1.0.0
+// @version      1.0.1
 // @description  Quick-action panel for the crafting system — recipe memory, one-click commands, attempt counter.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -127,10 +127,15 @@
       border: 'rgba(100,200,100,0.4)',
     });
 
+    function sendThenContinue(cmd) {
+      sendCommand(cmd);
+      setTimeout(() => sendCommand('craft continue'), 150);
+    }
+
     function doStart() {
       const recipe = recipeInput.value.trim();
       if (!recipe) { recipeInput.focus(); return; }
-      sendCommand(`craft start ${recipe}`);
+      sendThenContinue(`craft start ${recipe}`);
       startCount++;
       refreshCounter();
     }
@@ -153,9 +158,9 @@
     });
 
     continueBtn.addEventListener('click',   () => sendCommand('craft continue'));
-    carefulBtn.addEventListener('click',    () => sendCommand('craft choose careful'));
-    controlledBtn.addEventListener('click', () => sendCommand('craft choose controlled'));
-    rushBtn.addEventListener('click',       () => sendCommand('craft choose rush'));
+    carefulBtn.addEventListener('click',    () => sendThenContinue('craft choose careful'));
+    controlledBtn.addEventListener('click', () => sendThenContinue('craft choose controlled'));
+    rushBtn.addEventListener('click',       () => sendThenContinue('craft choose rush'));
     abandonBtn.addEventListener('click',    () => sendCommand('craft cancel'));
 
     const row2 = document.createElement('div');
