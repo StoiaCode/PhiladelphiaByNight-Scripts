@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PbN Chat Declutter
 // @namespace    stoia.red
-// @version      1.0.5
-// @description  Collapses consecutive same-person SYSTEM spam (walk in / look around / walk out) into a compact block, and hides "entered torpor" for other players for a bit in case it's just a flaky reconnect.
+// @version      1.1.0
+// @description  Mutes and collapses consecutive/related SYSTEM spam (walk in / look around / walk out) into compact per-actor blocks, and hides "entered torpor" for other players for a bit in case it's just a flaky reconnect.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
 // @grant        none
@@ -17,6 +17,13 @@
   // case a matching "<Name> has awoken." shows up (flaky-reconnect blip).
   // Only applies to other players — your own torpor always shows immediately.
   const TORPOR_AWAIT_MS = 30000;
+
+  // Each actor's grouping thread stays open for this many total chat lines
+  // (dialogue included, since that's what actually scrolls things away) —
+  // a rough stand-in for "still on screen." A busy room burns through this
+  // fast on message count alone regardless of wall-clock time, which is the
+  // point: a thread that's scrolled off shouldn't keep silently growing.
+  const SCREEN_WORTH_LINES = 30;
 
   // Minimum number of Title-Case words required to treat the start of a
   // SYSTEM line as a real actor name (rather than an ordinary capitalized
@@ -51,13 +58,15 @@
   const FOLLOW_TARGET_RE = /\bfollow(?:s|ing)\s+(\p{Lu}[\p{L}\p{N}'-]*(?:\s\p{Lu}[\p{L}\p{N}'-]*){0,3})/u;
   const TORPOR_RE = /\bentered torpor\b/i;
   const AWOKEN_RE = /\bhas awoken\b/i;
-
-  // Movement lines (walk in/out) always include a compass/travel direction
-  // word ("from the east", "towards the west", "upward", etc.) regardless of
-  // the customizable flavor verb used. Not used programmatically below since
-  // grouping treats every consecutive same-actor SYSTEM line the same way,
-  // but useful context if the heuristic ever needs to split out message
-  // subtypes: /\b(north|south|east|west|northeast|northwest|southeast|southwest|up|upward|down|downward|in|out)\b/i
+  // Confirmed from real traffic: "X looks around." never carries custom
+  // flavor text (every enter/leave line does, this one never does). That
+  // makes it a reliable anchor for an identity even when X is an anonymous
+  // description with no proper name — see buildIdentity() and the orphan
+  // buffer below.
+  const LOOKS_AROUND_RE = /^(.+) looks around\.$/;
+  // Guards findPrefixThread() against accidentally matching on a very short
+  // registered key (shouldn't happen given NAME_STOPWORDS, but cheap safety).
+  const MIN_PREFIX_KEY_LEN = 8;
 
   // --------------------------------------------------------------------------
   // DOM helpers
@@ -94,26 +103,12 @@
       node.style.clip = node.style.whiteSpace = '';
   }
 
-  // --------------------------------------------------------------------------
-  // Feature A — consecutive same-actor grouping
-  // --------------------------------------------------------------------------
-
-  let pendingSingle = null; // { text, node, primaryName, names: Set } | null
-  let currentGroup = null;  // { wrapperEl, rowsEl, primaryName, names: Set } | null
-
   // Shared muted tone for movement-type lines, whether they end up solo or
   // in a materialized group — a lone message dims in place immediately on
   // classification; a grouped one is hidden and replaced by rows at the same
   // opacity, so there's no flash of "loud" styling before it settles.
   const DIM_OPACITY = '0.85';
 
-  function closeOpenGroup() {
-    pendingSingle = null;
-    currentGroup = null;
-  }
-
-  // Mutes a still-visible original line (a solo movement message that hasn't
-  // — or hasn't yet — joined a group) without restructuring it.
   function dimInPlace(node) {
     node.style.opacity = DIM_OPACITY;
   }
@@ -125,13 +120,107 @@
     rowsEl.appendChild(row);
   }
 
+  function truncateHeader(s, max) {
+    return s.length > max ? s.slice(0, max - 1) + '…' : s;
+  }
+
+  // --------------------------------------------------------------------------
+  // Identity extraction
+  // --------------------------------------------------------------------------
+
+  // Builds the identity set for a SYSTEM line: the leading actor name if we
+  // found one, a follow-target name if the line mentions "following" /
+  // "follows" someone, and the subject of a "looks around." line (works even
+  // for an anonymous description, since that suffix is never customized).
+  // A line with none of these can still be linked in later — see
+  // handleArticle's prefix/orphan fallbacks.
+  function buildIdentity(text, name) {
+    const identitySet = new Set();
+    if (name) identitySet.add(name);
+    if (FOLLOW_RE.test(text)) {
+      const targetMatch = FOLLOW_TARGET_RE.exec(text);
+      if (targetMatch && targetMatch[1] !== name) identitySet.add(targetMatch[1]);
+    }
+    const lookMatch = LOOKS_AROUND_RE.exec(text);
+    if (lookMatch) identitySet.add(lookMatch[1]);
+    return identitySet;
+  }
+
+  // --------------------------------------------------------------------------
+  // Per-actor threads
+  // --------------------------------------------------------------------------
+  // Each thread is a { kind: 'single'|'group', primaryName, names: Set,
+  // lastLine, ...single:{text,node} or group:{wrapperEl,rowsEl} }. A single
+  // identity string can appear as a key for at most one thread; a
+  // follow-bridged thread is registered under every name it's known by.
+
+  const threads = new Map(); // identity string -> thread
+  let lineCounter = 0;
+
+  function registerThread(thread) {
+    thread.names.forEach(n => threads.set(n, thread));
+  }
+
+  // Returns the thread for any name in identitySet that's still "on screen"
+  // (within SCREEN_WORTH_LINES), or null if none is open.
+  function findOpenThread(identitySet) {
+    for (const n of identitySet) {
+      const t = threads.get(n);
+      if (t && (lineCounter - t.lastLine) <= SCREEN_WORTH_LINES) return t;
+    }
+    return null;
+  }
+
+  // Fallback for a line with no identity of its own: does it start with an
+  // already-known identity string (e.g. an anonymous character's next
+  // action, once their description was established by a prior "looks
+  // around." line)?
+  function findPrefixThread(text) {
+    for (const [key, thread] of threads) {
+      if (key.length < MIN_PREFIX_KEY_LEN) continue;
+      if ((lineCounter - thread.lastLine) > SCREEN_WORTH_LINES) continue;
+      if (text.startsWith(key)) return thread;
+    }
+    return null;
+  }
+
+  // Short buffer of recent lines that couldn't be identified at all (e.g. an
+  // anonymous character's entry line, before a later "looks around." reveals
+  // their description). Lets that entry line be retroactively linked once an
+  // identity for it shows up.
+  const recentOrphans = []; // { text, node, line }[]
+  const ORPHAN_BUFFER_MAX = 20;
+
+  function pruneOrphans() {
+    while (recentOrphans.length && (lineCounter - recentOrphans[0].line) > SCREEN_WORTH_LINES) {
+      recentOrphans.shift();
+    }
+  }
+
+  function recordOrphan(text, node) {
+    recentOrphans.push({ text, node, line: lineCounter });
+    if (recentOrphans.length > ORPHAN_BUFFER_MAX) recentOrphans.shift();
+  }
+
+  function takeMatchingOrphan(key) {
+    pruneOrphans();
+    const idx = recentOrphans.findIndex(o => o.text.startsWith(key));
+    if (idx === -1) return null;
+    return recentOrphans.splice(idx, 1)[0];
+  }
+
+  // --------------------------------------------------------------------------
+  // Feature A — grouping
+  // --------------------------------------------------------------------------
+
   function materializeGroup(first, second) {
     const wrapper = document.createElement('div');
     wrapper.className = 'pbn-declutter-group';
     wrapper.style.cssText = 'margin:2px 0;';
 
     const header = document.createElement('div');
-    header.textContent = first.primaryName;
+    header.textContent = truncateHeader(first.primaryName, 48);
+    header.title = first.primaryName;
     header.style.cssText = 'font:11px/1.4 inherit;opacity:0.6;font-weight:600;';
 
     const rows = document.createElement('div');
@@ -148,22 +237,7 @@
     const names = new Set(first.names);
     second.identitySet.forEach(n => names.add(n));
 
-    currentGroup = { wrapperEl: wrapper, rowsEl: rows, primaryName: first.primaryName, names };
-    pendingSingle = null;
-  }
-
-  // Builds the identity set for a SYSTEM line: the leading actor name if we
-  // found one, plus a follow-target name if the line mentions "following" /
-  // "follows" someone. A line can still be classifiable purely via its
-  // follow-target even with no leading name — see handleArticle.
-  function buildIdentity(text, name) {
-    const identitySet = new Set();
-    if (name) identitySet.add(name);
-    if (FOLLOW_RE.test(text)) {
-      const targetMatch = FOLLOW_TARGET_RE.exec(text);
-      if (targetMatch && targetMatch[1] !== name) identitySet.add(targetMatch[1]);
-    }
-    return identitySet;
+    registerThread({ kind: 'group', wrapperEl: wrapper, rowsEl: rows, primaryName: first.primaryName, names, lastLine: lineCounter });
   }
 
   function handleGrouping(text, node, identitySet, primaryName) {
@@ -172,23 +246,37 @@
     // briefly, and dimming a node that's about to be hidden is harmless.
     dimInPlace(node);
 
-    const open = currentGroup || pendingSingle;
-    const intersects = open && [...identitySet].some(n => open.names.has(n));
+    const open = findOpenThread(identitySet);
 
-    if (intersects && currentGroup) {
-      appendRow(currentGroup.rowsEl, text);
+    if (open && open.kind === 'group') {
+      appendRow(open.rowsEl, text);
       hideKeepText(node);
-      identitySet.forEach(n => currentGroup.names.add(n));
+      identitySet.forEach(n => open.names.add(n));
+      open.lastLine = lineCounter;
+      registerThread(open);
       return;
     }
 
-    if (intersects && pendingSingle) {
-      materializeGroup(pendingSingle, { text, node, identitySet });
+    if (open && open.kind === 'single') {
+      materializeGroup(open, { text, node, identitySet });
       return;
     }
 
-    closeOpenGroup();
-    pendingSingle = { text, node, primaryName, names: identitySet };
+    // No open thread for this identity yet — check whether a recent
+    // unidentified line (e.g. this same anonymous character's entry, before
+    // we knew their description) actually belongs to it.
+    for (const key of identitySet) {
+      const orphan = takeMatchingOrphan(key);
+      if (orphan) {
+        materializeGroup(
+          { text: orphan.text, node: orphan.node, primaryName, names: new Set() },
+          { text, node, identitySet }
+        );
+        return;
+      }
+    }
+
+    registerThread({ kind: 'single', text, node, primaryName, names: new Set(identitySet), lastLine: lineCounter });
   }
 
   // --------------------------------------------------------------------------
@@ -225,45 +313,43 @@
   // --------------------------------------------------------------------------
 
   function handleArticle(article) {
+    // Every chat line counts toward "screen worth," system or not — dialogue
+    // scrolls things away just as much as system spam does.
+    lineCounter++;
+
     const text = getSystemText(article);
-    if (text === null || SELF_RE.test(text)) {
-      closeOpenGroup();
-      return;
-    }
+    if (text === null || SELF_RE.test(text)) return;
 
     // The leading actor may have no usable name at all — some characters
     // display an anonymous/masked description instead of a proper name
     // (e.g. "an immaculately dressed, but horribly unkempt lady"), which
     // starts lowercase and never matches NAME_RE. Torpor/awoken require a
-    // real leading name; grouping can still fall back to a follow-target
-    // name below, so an anonymous "follows <Name>" line can bridge into
-    // that name's group even though we can't name its own actor.
+    // real leading name; grouping can still identify the line via a
+    // follow-target or "looks around." subject below.
     const nameMatch = NAME_RE.exec(text);
     let name = nameMatch ? nameMatch[1] : null;
     if (name && NAME_STOPWORDS.has(name)) name = null;
 
     if (name) {
-      if (TORPOR_RE.test(text)) {
-        closeOpenGroup();
-        handleTorpor(name, article);
-        return;
-      }
-      if (AWOKEN_RE.test(text)) {
-        closeOpenGroup();
-        handleAwoken(name, article);
-        return;
-      }
+      if (TORPOR_RE.test(text)) { handleTorpor(name, article); return; }
+      if (AWOKEN_RE.test(text)) { handleAwoken(name, article); return; }
     }
 
     const identitySet = buildIdentity(text, name);
+
     if (identitySet.size === 0) {
-      // No leading name and no recognizable follow-target — can't merge or
-      // bridge it into anything, but it's still just SYSTEM narrative flavor
-      // text (an anonymous "X looks around."-style line, say), so mute it
-      // the same as everything else instead of leaving it at full volume
-      // just because we couldn't identify who it's about.
+      // No name, no follow-target, not a "looks around." line — try bridging
+      // into an already-known identity (e.g. this same anonymous character's
+      // next action after their description was established); otherwise
+      // it's an orphan for now, muted and buffered in case a later line
+      // reveals who it was about.
+      const fallback = findPrefixThread(text);
+      if (fallback) {
+        handleGrouping(text, article, new Set(fallback.names), fallback.primaryName);
+        return;
+      }
       dimInPlace(article);
-      closeOpenGroup();
+      recordOrphan(text, article);
       return;
     }
 
