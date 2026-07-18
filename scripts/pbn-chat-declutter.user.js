@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Chat Declutter
 // @namespace    stoia.red
-// @version      1.0.0
+// @version      1.0.1
 // @description  Collapses consecutive same-person SYSTEM spam (walk in / look around / walk out) into a compact block, and hides "entered torpor" for other players for a bit in case it's just a flaky reconnect.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -24,13 +24,16 @@
   // words; raise this if single-word character names turn out to exist.
   const NAME_MIN_WORDS = 2;
 
-  // The exact wording for "follows", "entered torpor", and "has awoken"
-  // hasn't been directly observed yet (only paraphrased) — these are
-  // best-effort and safe to tighten/loosen once real examples show up.
+  // The exact wording for "entered torpor" and "has awoken" hasn't been
+  // directly observed yet (only paraphrased) — best-effort, safe to
+  // tighten/loosen once real examples show up. Follow messages use two
+  // different verb forms confirmed from real traffic: "arrives, following
+  // <Name>, from the south." on entry, and "follows <Name> to the down." on
+  // exit — both must match.
   const SELF_RE = /^You\b/;
   const NAME_RE = new RegExp(`^([A-Z][\\w'-]*(?:\\s[A-Z][\\w'-]*){${NAME_MIN_WORDS - 1},3})\\b`);
-  const FOLLOW_RE = /\bfollowing\b/i;
-  const FOLLOW_TARGET_RE = /\bfollowing\s+([A-Z][\w'-]*(?:\s[A-Z][\w'-]*){0,3})/;
+  const FOLLOW_RE = /\bfollow(?:s|ing)\b/i;
+  const FOLLOW_TARGET_RE = /\bfollow(?:s|ing)\s+([A-Z][\w'-]*(?:\s[A-Z][\w'-]*){0,3})/;
   const TORPOR_RE = /\bentered torpor\b/i;
   const AWOKEN_RE = /\bhas awoken\b/i;
 
