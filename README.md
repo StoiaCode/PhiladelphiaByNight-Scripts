@@ -164,7 +164,7 @@ This only changes what's *shown* — every original message is left fully intact
 This script has no in-page UI. A few settings live at the top for power users:
 
 - `TORPOR_AWAIT_MS` — how long to wait for a matching "awoken" line before revealing a torpor message, in milliseconds (default `30000`, i.e. 30 seconds).
-- `SCREEN_WORTH_LINES` — how many chat lines (any type) an actor's thread can go without being extended before it's considered stale (default `30`). A rough approximation of "still visible without scrolling" — tune to taste.
+- `SCREEN_WORTH_LINES` — how many chat lines (any type) an actor's thread can go without being extended before it's considered stale (default `18`). A rough approximation of "still visible without scrolling" — tune to taste.
 - `NAME_MIN_WORDS` — minimum number of Title-Case words required to treat the start of a SYSTEM line as a real character name (default `1`, since single-word character names exist).
 
 The exact wording the server uses for "entered torpor" and "has awoken" messages hasn't been directly observed yet — if the torpor await doesn't trigger on a real message, check the `TORPOR_RE`/`AWOKEN_RE` patterns near the top of the script and adjust them to match. (Follow messages and "looks around." are confirmed from real traffic.)

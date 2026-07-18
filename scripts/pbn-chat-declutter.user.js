@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Chat Declutter
 // @namespace    stoia.red
-// @version      1.1.0
+// @version      1.1.1
 // @description  Mutes and collapses consecutive/related SYSTEM spam (walk in / look around / walk out) into compact per-actor blocks, and hides "entered torpor" for other players for a bit in case it's just a flaky reconnect.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -23,7 +23,7 @@
   // a rough stand-in for "still on screen." A busy room burns through this
   // fast on message count alone regardless of wall-clock time, which is the
   // point: a thread that's scrolled off shouldn't keep silently growing.
-  const SCREEN_WORTH_LINES = 30;
+  const SCREEN_WORTH_LINES = 18;
 
   // Minimum number of Title-Case words required to treat the start of a
   // SYSTEM line as a real actor name (rather than an ordinary capitalized
