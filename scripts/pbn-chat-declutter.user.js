@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Chat Declutter
 // @namespace    stoia.red
-// @version      1.1.1
+// @version      1.2.0
 // @description  Mutes and collapses consecutive/related SYSTEM spam (walk in / look around / walk out) into compact per-actor blocks, and hides "entered torpor" for other players for a bit in case it's just a flaky reconnect.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -67,6 +67,13 @@
   // Guards findPrefixThread() against accidentally matching on a very short
   // registered key (shouldn't happen given NAME_STOPWORDS, but cheap safety).
   const MIN_PREFIX_KEY_LEN = 8;
+  // Minimum shared-prefix length (characters) before two anonymous lines with
+  // no other anchor (no name, no follow, no "looks around.") are inferred to
+  // be the same character purely from matching leading text. Higher than
+  // MIN_PREFIX_KEY_LEN since this infers a brand-new identity from scratch
+  // rather than matching an already-confirmed one — a short accidental
+  // overlap ("A tall, ") shouldn't be enough to merge two different people.
+  const MIN_LCP_LEN = 20;
 
   // --------------------------------------------------------------------------
   // DOM helpers
@@ -209,6 +216,37 @@
     return recentOrphans.splice(idx, 1)[0];
   }
 
+  // Longest run of identical leading characters. If two lines share an exact
+  // description as a prefix, this recovers that description precisely —
+  // it can only stop where the texts actually first differ, which for a
+  // fixed description + custom flavor text is exactly the verb boundary.
+  function commonPrefix(a, b) {
+    let i = 0;
+    const len = Math.min(a.length, b.length);
+    while (i < len && a[i] === b[i]) i++;
+    return a.slice(0, i);
+  }
+
+  // Last-resort fallback for a fully unidentified line (no name, no follow,
+  // no "looks around.", no known-thread prefix match): does it share a long
+  // enough leading run with some other still-unidentified recent line to
+  // infer they're the same anonymous character? Picks the best (longest)
+  // match among buffered orphans rather than the first one found.
+  function findOrphanBySimilarity(text) {
+    pruneOrphans();
+    let bestIdx = -1;
+    let bestKey = '';
+    for (let i = 0; i < recentOrphans.length; i++) {
+      const cp = commonPrefix(text, recentOrphans[i].text).trimEnd();
+      if (cp.length >= MIN_LCP_LEN && cp.length > bestKey.length) {
+        bestKey = cp;
+        bestIdx = i;
+      }
+    }
+    if (bestIdx === -1) return null;
+    return { orphan: recentOrphans.splice(bestIdx, 1)[0], key: bestKey };
+  }
+
   // --------------------------------------------------------------------------
   // Feature A — grouping
   // --------------------------------------------------------------------------
@@ -348,6 +386,21 @@
         handleGrouping(text, article, new Set(fallback.names), fallback.primaryName);
         return;
       }
+
+      // Still nothing — as a last resort, see if this line shares a long
+      // exact leading run with another still-unidentified recent line (e.g.
+      // two custom-flavored lines about the same anonymous character, with
+      // no "looks around." to anchor either of them). The matched prefix
+      // itself becomes the identity going forward.
+      const similar = findOrphanBySimilarity(text);
+      if (similar) {
+        materializeGroup(
+          { text: similar.orphan.text, node: similar.orphan.node, primaryName: similar.key, names: new Set() },
+          { text, node: article, identitySet: new Set([similar.key]) }
+        );
+        return;
+      }
+
       dimInPlace(article);
       recordOrphan(text, article);
       return;
