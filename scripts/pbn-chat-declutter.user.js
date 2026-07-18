@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Chat Declutter
 // @namespace    stoia.red
-// @version      1.0.1
+// @version      1.0.2
 // @description  Collapses consecutive same-person SYSTEM spam (walk in / look around / walk out) into a compact block, and hides "entered torpor" for other players for a bit in case it's just a flaky reconnect.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -20,9 +20,12 @@
 
   // Minimum number of Title-Case words required to treat the start of a
   // SYSTEM line as a real actor name (rather than an ordinary capitalized
-  // sentence opener). Every confirmed example ("Cade Karstenson…") is two
-  // words; raise this if single-word character names turn out to exist.
-  const NAME_MIN_WORDS = 2;
+  // sentence opener). Confirmed from real traffic that single-word character
+  // names exist ("Thorn"), so this has to stay at 1 — the trade-off is an
+  // occasional false positive (e.g. "Invalid command: says" reads as an
+  // actor named "Invalid"), which is harmless in practice since a one-off
+  // never repeats consecutively and a lone message renders unchanged.
+  const NAME_MIN_WORDS = 1;
 
   // The exact wording for "entered torpor" and "has awoken" hasn't been
   // directly observed yet (only paraphrased) — best-effort, safe to

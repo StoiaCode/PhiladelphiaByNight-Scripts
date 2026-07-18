@@ -162,7 +162,7 @@ This only changes what's *shown* — every original message is left fully intact
 This script has no in-page UI. A couple of settings live at the top for power users:
 
 - `TORPOR_AWAIT_MS` — how long to wait for a matching "awoken" line before revealing a torpor message, in milliseconds (default `30000`, i.e. 30 seconds).
-- `NAME_MIN_WORDS` — minimum number of Title-Case words required to treat the start of a SYSTEM line as a real character name (default `2`).
+- `NAME_MIN_WORDS` — minimum number of Title-Case words required to treat the start of a SYSTEM line as a real character name (default `1`, since single-word character names exist).
 
 The exact wording the server uses for "entered torpor" and "has awoken" messages hasn't been directly observed yet — if the torpor await doesn't trigger on a real message, check the `TORPOR_RE`/`AWOKEN_RE` patterns near the top of the script and adjust them to match. (Follow messages are confirmed from real traffic and match both "arrives, following X, from the south" and "follows X to the down" phrasing.)
 
