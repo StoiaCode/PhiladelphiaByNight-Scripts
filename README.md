@@ -23,6 +23,7 @@ manager will open an install screen — review it and click **Install**.
 | Typing Indicator De-Shift | [`pbn-typing-indicator-deshift.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-typing-indicator-deshift.user.js) |
 | Layout Lock | [`pbn-layout-lock.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-layout-lock.user.js) |
 | Chat Log | [`pbn-chat-log.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-chat-log.user.js) |
+| Chat Declutter | [`pbn-chat-declutter.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-chat-declutter.user.js) |
 | Compass Tools | [`pbn-compass-tools.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-compass-tools.user.js) |
 | Craft Helper | [`pbn-craft-helper.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-craft-helper.user.js) |
 
@@ -146,6 +147,24 @@ Adds a **Save Log** button to the chat tab bar. Messages are captured to memory 
 Nothing is written to browser storage — the log lives in memory only and is gone when the tab closes. Messages already on screen when the script loads are backfilled with the session-start timestamp.
 
 This script has no configurable options.
+
+---
+
+## PbN Chat Declutter
+
+Cuts down on `[SYSTEM]` spam without dropping any information.
+
+- **Movement grouping** — when the same person's SYSTEM lines arrive back to back (walk in, look around, walk out, etc.), they're collapsed into one compact block: the name shown once, each original line underneath as its own short row. A "follows" message about the same people bridges the group instead of breaking it; anything else (a different person, a chat message) starts a fresh block.
+- **Torpor/awoken await** — when someone else's SYSTEM line says they entered torpor, it's held back for a bit. If a matching "has awoken" line for the same person shows up within that window, both are suppressed entirely (it was just a flaky disconnect). If nothing shows up in time, the torpor message is revealed as normal. Your own torpor/awoken lines are never held back.
+
+This only changes what's *shown* — every original message is left fully intact in the page (just visually hidden when folded into a block), so [PbN Chat Log](#pbn-chat-log)'s exported session log is unaffected and still contains every line.
+
+This script has no in-page UI. A couple of settings live at the top for power users:
+
+- `TORPOR_AWAIT_MS` — how long to wait for a matching "awoken" line before revealing a torpor message, in milliseconds (default `30000`, i.e. 30 seconds).
+- `NAME_MIN_WORDS` — minimum number of Title-Case words required to treat the start of a SYSTEM line as a real character name (default `2`).
+
+The exact wording the server uses for "follows", "entered torpor", and "has awoken" messages hasn't been directly observed yet — if grouping or the torpor await doesn't trigger on a real message, check the `FOLLOW_RE`/`TORPOR_RE`/`AWOKEN_RE` patterns near the top of the script and adjust them to match.
 
 ---
 
