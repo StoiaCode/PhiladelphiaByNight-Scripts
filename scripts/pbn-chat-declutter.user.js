@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Chat Declutter
 // @namespace    stoia.red
-// @version      1.0.3
+// @version      1.0.4
 // @description  Collapses consecutive same-person SYSTEM spam (walk in / look around / walk out) into a compact block, and hides "entered torpor" for other players for a bit in case it's just a flaky reconnect.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -140,17 +140,25 @@
     pendingSingle = null;
   }
 
-  function handleGrouping(name, text, node) {
-    // Dim immediately, before we know whether this stays solo or gets
-    // folded into a group — a lone message should never render "loud" even
-    // briefly, and dimming a node that's about to be hidden is harmless.
-    dimInPlace(node);
-
-    let identitySet = new Set([name]);
+  // Builds the identity set for a SYSTEM line: the leading actor name if we
+  // found one, plus a follow-target name if the line mentions "following" /
+  // "follows" someone. A line can still be classifiable purely via its
+  // follow-target even with no leading name — see handleArticle.
+  function buildIdentity(text, name) {
+    const identitySet = new Set();
+    if (name) identitySet.add(name);
     if (FOLLOW_RE.test(text)) {
       const targetMatch = FOLLOW_TARGET_RE.exec(text);
       if (targetMatch && targetMatch[1] !== name) identitySet.add(targetMatch[1]);
     }
+    return identitySet;
+  }
+
+  function handleGrouping(text, node, identitySet, primaryName) {
+    // Dim immediately, before we know whether this stays solo or gets
+    // folded into a group — a lone message should never render "loud" even
+    // briefly, and dimming a node that's about to be hidden is harmless.
+    dimInPlace(node);
 
     const open = currentGroup || pendingSingle;
     const intersects = open && [...identitySet].some(n => open.names.has(n));
@@ -168,7 +176,7 @@
     }
 
     closeOpenGroup();
-    pendingSingle = { text, node, primaryName: name, names: identitySet };
+    pendingSingle = { text, node, primaryName, names: identitySet };
   }
 
   // --------------------------------------------------------------------------
@@ -211,25 +219,38 @@
       return;
     }
 
+    // The leading actor may have no usable name at all — some characters
+    // display an anonymous/masked description instead of a proper name
+    // (e.g. "an immaculately dressed, but horribly unkempt lady"), which
+    // starts lowercase and never matches NAME_RE. Torpor/awoken require a
+    // real leading name; grouping can still fall back to a follow-target
+    // name below, so an anonymous "follows <Name>" line can bridge into
+    // that name's group even though we can't name its own actor.
     const nameMatch = NAME_RE.exec(text);
-    if (!nameMatch) {
-      closeOpenGroup();
-      return;
-    }
-    const name = nameMatch[1];
+    const name = nameMatch ? nameMatch[1] : null;
 
-    if (TORPOR_RE.test(text)) {
-      closeOpenGroup();
-      handleTorpor(name, article);
-      return;
-    }
-    if (AWOKEN_RE.test(text)) {
-      closeOpenGroup();
-      handleAwoken(name, article);
-      return;
+    if (name) {
+      if (TORPOR_RE.test(text)) {
+        closeOpenGroup();
+        handleTorpor(name, article);
+        return;
+      }
+      if (AWOKEN_RE.test(text)) {
+        closeOpenGroup();
+        handleAwoken(name, article);
+        return;
+      }
     }
 
-    handleGrouping(name, text, article);
+    const identitySet = buildIdentity(text, name);
+    if (identitySet.size === 0) {
+      // No leading name and no recognizable follow-target — truly unclassifiable.
+      closeOpenGroup();
+      return;
+    }
+
+    const primaryName = name || [...identitySet][0];
+    handleGrouping(text, article, identitySet, primaryName);
   }
 
   // --------------------------------------------------------------------------
