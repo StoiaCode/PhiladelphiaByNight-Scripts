@@ -154,7 +154,7 @@ This script has no configurable options.
 
 Cuts down on `[SYSTEM]` spam without dropping any information.
 
-- **Movement grouping** — when the same person's SYSTEM lines arrive back to back (walk in, look around, walk out, etc.), they're collapsed into one compact block: the name shown once, each original line underneath as its own short row. A "follows" message about the same people bridges the group instead of breaking it; anything else (a different person, a chat message) starts a fresh block.
+- **Movement grouping** — every walk in / look around / walk out line renders in a muted grey tone as soon as it arrives, so a lone wanderer never stands out the way an important system message would. When the same person's (or a "follows" chain's) SYSTEM lines arrive back to back, they morph into one compact block: the name shown once, each original line underneath as its own short row, in that same tone. Anything else (a different person, a chat message) starts a fresh block.
 - **Torpor/awoken await** — when someone else's SYSTEM line says they entered torpor, it's held back for a bit. If a matching "has awoken" line for the same person shows up within that window, both are suppressed entirely (it was just a flaky disconnect). If nothing shows up in time, the torpor message is revealed as normal. Your own torpor/awoken lines are never held back.
 
 This only changes what's *shown* — every original message is left fully intact in the page (just visually hidden when folded into a block), so [PbN Chat Log](#pbn-chat-log)'s exported session log is unaffected and still contains every line.

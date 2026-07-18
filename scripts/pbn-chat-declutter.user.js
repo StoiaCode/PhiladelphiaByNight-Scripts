@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Chat Declutter
 // @namespace    stoia.red
-// @version      1.0.2
+// @version      1.0.3
 // @description  Collapses consecutive same-person SYSTEM spam (walk in / look around / walk out) into a compact block, and hides "entered torpor" for other players for a bit in case it's just a flaky reconnect.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -89,15 +89,27 @@
   let pendingSingle = null; // { text, node, primaryName, names: Set } | null
   let currentGroup = null;  // { wrapperEl, rowsEl, primaryName, names: Set } | null
 
+  // Shared muted tone for movement-type lines, whether they end up solo or
+  // in a materialized group — a lone message dims in place immediately on
+  // classification; a grouped one is hidden and replaced by rows at the same
+  // opacity, so there's no flash of "loud" styling before it settles.
+  const DIM_OPACITY = '0.85';
+
   function closeOpenGroup() {
     pendingSingle = null;
     currentGroup = null;
   }
 
+  // Mutes a still-visible original line (a solo movement message that hasn't
+  // — or hasn't yet — joined a group) without restructuring it.
+  function dimInPlace(node) {
+    node.style.opacity = DIM_OPACITY;
+  }
+
   function appendRow(rowsEl, text) {
     const row = document.createElement('div');
     row.textContent = text;
-    row.style.cssText = 'font:12px/1.4 inherit;opacity:0.85;';
+    row.style.cssText = `font:12px/1.4 inherit;opacity:${DIM_OPACITY};`;
     rowsEl.appendChild(row);
   }
 
@@ -129,6 +141,11 @@
   }
 
   function handleGrouping(name, text, node) {
+    // Dim immediately, before we know whether this stays solo or gets
+    // folded into a group — a lone message should never render "loud" even
+    // briefly, and dimming a node that's about to be hidden is harmless.
+    dimInPlace(node);
+
     let identitySet = new Set([name]);
     if (FOLLOW_RE.test(text)) {
       const targetMatch = FOLLOW_TARGET_RE.exec(text);
