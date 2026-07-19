@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Chat Declutter
 // @namespace    stoia.red
-// @version      1.2.0
+// @version      1.2.1
 // @description  Mutes and collapses consecutive/related SYSTEM spam (walk in / look around / walk out) into compact per-actor blocks, and hides "entered torpor" for other players for a bit in case it's just a flaky reconnect.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -74,6 +74,17 @@
   // rather than matching an already-confirmed one — a short accidental
   // overlap ("A tall, ") shouldn't be enough to merge two different people.
   const MIN_LCP_LEN = 20;
+  // Some [SYSTEM] messages are a completely different category of content —
+  // e.g. a "Daily News" feature that posts a headline, a multi-sentence
+  // article body, and bracket-tagged metadata ("[Center City | 2 nights
+  // ago | Severity: Critical]") all as their own SYSTEM lines. None of that
+  // is movement/observation spam, so it shouldn't be dimmed, grouped, or fed
+  // into the orphan/similarity buffers at all — left completely untouched.
+  // Detected two ways: a leading structural marker (-, ", or [), or sheer
+  // length (every real movement/look line observed so far is well under
+  // this; a multi-sentence news paragraph blows past it easily).
+  const NON_MOVEMENT_RE = /^[-"[]/;
+  const MAX_MOVEMENT_LEN = 200;
 
   // --------------------------------------------------------------------------
   // DOM helpers
@@ -146,7 +157,14 @@
     if (name) identitySet.add(name);
     if (FOLLOW_RE.test(text)) {
       const targetMatch = FOLLOW_TARGET_RE.exec(text);
-      if (targetMatch && targetMatch[1] !== name) identitySet.add(targetMatch[1]);
+      // Same trap as the leading-name case: a followed target with no proper
+      // name of their own ("following A short woman, with long dust-white
+      // hair") truncates to just the stopword "A" — drop it rather than
+      // registering "A" as a shared identity for every unrelated line that
+      // happens to start with it.
+      if (targetMatch && targetMatch[1] !== name && !NAME_STOPWORDS.has(targetMatch[1])) {
+        identitySet.add(targetMatch[1]);
+      }
     }
     const lookMatch = LOOKS_AROUND_RE.exec(text);
     if (lookMatch) identitySet.add(lookMatch[1]);
@@ -357,6 +375,11 @@
 
     const text = getSystemText(article);
     if (text === null || SELF_RE.test(text)) return;
+
+    // Not movement/observation spam at all — a news article or similar
+    // structured announcement. Leave it completely alone: no dimming, no
+    // grouping, no orphan buffering.
+    if (NON_MOVEMENT_RE.test(text) || text.length > MAX_MOVEMENT_LEN) return;
 
     // The leading actor may have no usable name at all — some characters
     // display an anonymous/masked description instead of a proper name
