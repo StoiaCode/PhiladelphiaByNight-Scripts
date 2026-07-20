@@ -182,14 +182,17 @@ Instead of trying to make `[SYSTEM]` movement spam *look* clean in the chat (Cha
 
 - **A "currently present" roster**, shown in a new **Present** tab next to the room panel — built incrementally from enter/leave lines, and periodically corrected by `/look`'s own "You see: • Name • Name…" listing, which self-heals any drift from a missed or unparseable enter/leave line. Enter/leave detection isn't perfect — a line with genuinely no direction phrasing at all (or, confirmed from real traffic, one describing boarding a vehicle — "steps aboard the waiting train" — rather than moving in a direction) is left alone rather than guessed at, and the next `/look` catches up.
 - **The roster resets on every room change**, not just on `/look` — the game's own self-referential "You move ... to ..." line (or, only on initial login, the one-time "-- You are now here --" divider) is used as the signal that whatever was tracked belonged to the *previous* room and is now stale.
-- **Your own character can be included too** — set `MY_CHARACTER_NAME` (see below), since you can never be inferred automatically: self-referential lines only ever say "You", and you never appear in your own `/look` listing.
+- **Your own character can be included too** (see "Setting your character name" below), since you can never be inferred automatically: self-referential lines only ever say "You", and you never appear in your own `/look` listing.
 - **Enter, leave, and "looks around" lines are hidden from chat entirely** once Room Presence is tracking — the Present tab is the only visible trace of that activity.
 - **Momentary arrows for "looks at" and "whispers to."** Instead of a chat line, a line is drawn from the actor's row to the target's row in the Present tab and fades out after a few seconds. If the Present tab isn't open when one of these happens, the arrow is skipped (not queued) — the line is still hidden from chat either way.
 - **Mention arrows** — when someone's dialogue names another currently-present person, the same kind of arrow draws from speaker to mentioned person. Only matches named (non-anonymous) roster members, word-bounded and case-sensitive, to avoid false-positiving on ordinary words that happen to match part of someone's name.
 
-This script has no in-page configuration. A few settings live at the top for power users:
+### Setting your character name
 
-- `MY_CHARACTER_NAME` — your character's exact display name (default `''`, i.e. not tracked). Set this so you show up in your own Present tab.
+Click your userscript manager's toolbar icon (Violentmonkey/Tampermonkey) and choose **"Set my character name"** from the script's menu, then enter your character's exact display name. This is stored in userscript storage, not the script's source — so it survives updates instead of fighting with `@updateURL` the way editing the script file directly would. Leave it blank to stop tracking yourself; everyone else keeps working normally either way. The change applies immediately, no reload needed.
+
+A few more settings live at the top of the script for power users, same convention as every other script in this repo (see [Advanced (in-script) options](#advanced-in-script-options) under Command Buttons). Editing these directly has the same trade-off as editing any userscript's source: your manager may treat the file as locally modified and stop auto-updating it until you either revert the edit or manually re-apply it after each update. That's an acceptable trade for settings almost nobody needs to touch; it's why `MY_CHARACTER_NAME` specifically doesn't work this way — every single installer needs to set it.
+
 - `ARROW_FADE_MS` — how long a drawn arrow stays visible before fading out (default `5000`, i.e. 5 seconds).
 - `MIN_MENTION_NAME_LEN` — minimum registered-name length before a substring match in dialogue counts as a mention (default `4`).
 - `MATCH_FIRST_NAME_ONLY` — `false` (default) requires a dialogue mention to match someone's full registered name; set `true` to also accept a bare first name (more mentions caught, more false positives from ordinary words that happen to be someone's first name).

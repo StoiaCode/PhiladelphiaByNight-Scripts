@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name         PbN Room Presence
 // @namespace    stoia.red
-// @version      1.1.1
+// @version      1.2.0
 // @description  Tracks who's actually in the room (via enter/leave lines, resynced by /look) in a new "Present" tab, and draws momentary arrows for looks/whispers/mentions instead of leaving them as chat spam.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
-// @grant        none
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_registerMenuCommand
 // @downloadURL  https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-room-presence.user.js
 // @updateURL    https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-room-presence.user.js
 // ==/UserScript==
@@ -98,11 +100,29 @@
   // This script can never learn your own character's name from anything it
   // observes — self-referential lines always say "You" ("You look around",
   // "You are in <room>"), and you never appear in your own /look roster
-  // listing either. Set this to your character's exact display name (as
-  // other people would see it in an enter/leave line) to have yourself
-  // show up in the Present tab too. Leave blank to just never track
-  // yourself — everyone else still works normally either way.
-  const MY_CHARACTER_NAME = '';
+  // listing either. Stored via GM_getValue/GM_setValue (not a source
+  // constant) so setting it doesn't require editing the script itself,
+  // which would break @updateURL auto-updates — same pattern as
+  // pbn-command-buttons.user.js's editable button list. Configure it via
+  // the userscript menu: Violentmonkey/Tampermonkey icon -> "Set my
+  // character name". Leave blank to just never track yourself — everyone
+  // else still works normally either way.
+  const MY_NAME_STORAGE_KEY = 'pbn_my_character_name';
+
+  function loadMyCharacterName() {
+    try {
+      if (typeof GM_getValue === 'function') return GM_getValue(MY_NAME_STORAGE_KEY, '') || '';
+    } catch (e) { /* fall through to blank */ }
+    return '';
+  }
+
+  function saveMyCharacterName(name) {
+    try {
+      if (typeof GM_setValue === 'function') GM_setValue(MY_NAME_STORAGE_KEY, name);
+    } catch (e) { /* storage unavailable; the live value still updates this session */ }
+  }
+
+  let myCharacterName = loadMyCharacterName();
 
   // How long a drawn arrow stays visible before fading out. Tune to taste.
   const ARROW_FADE_MS = 5000;
@@ -247,7 +267,7 @@
   // line) — whatever was tracked belonged to the room you just left.
   function handleRoomTransition() {
     clearRoster();
-    if (MY_CHARACTER_NAME) upsertRoster(MY_CHARACTER_NAME, 'self');
+    if (myCharacterName) upsertRoster(myCharacterName, 'self');
   }
 
   // The periodic source of truth: replaces the roster's membership with
@@ -547,10 +567,9 @@
     if (!buildPresentTab()) return false;
 
     // Seed immediately in case the room was already established (and its
-    // "-- You are now here --" divider already scrolled past) before this
-    // script mounted — the next real room transition still re-adds you
-    // fresh via handleNarrativeArticle regardless.
-    if (MY_CHARACTER_NAME) upsertRoster(MY_CHARACTER_NAME, 'self');
+    // arrival trigger already scrolled past) before this script mounted —
+    // the next real room transition still re-adds you fresh regardless.
+    if (myCharacterName) upsertRoster(myCharacterName, 'self');
 
     new MutationObserver(mutations => {
       for (const m of mutations) {
@@ -571,5 +590,31 @@
   if (!mount()) {
     const waiter = new MutationObserver(() => { if (mount()) waiter.disconnect(); });
     waiter.observe(document.body, { childList: true, subtree: true });
+  }
+
+  // --------------------------------------------------------------------------
+  // Settings (opened from the userscript menu)
+  // --------------------------------------------------------------------------
+
+  // Applies a name change immediately (removing any stale entry registered
+  // under the old name) rather than waiting for the next room transition.
+  function promptForCharacterName() {
+    const next = window.prompt(
+      "Enter your character's exact display name (as other people would see it in an enter/leave line). Leave blank to stop tracking yourself:",
+      myCharacterName
+    );
+    if (next === null) return; // cancelled
+    const trimmed = next.trim();
+    if (myCharacterName) {
+      const oldEntry = roster.get(myCharacterName);
+      if (oldEntry) removeRosterEntry(oldEntry);
+    }
+    myCharacterName = trimmed;
+    saveMyCharacterName(myCharacterName);
+    if (myCharacterName) upsertRoster(myCharacterName, 'self');
+  }
+
+  if (typeof GM_registerMenuCommand === 'function') {
+    GM_registerMenuCommand('Set my character name', promptForCharacterName);
   }
 })();
