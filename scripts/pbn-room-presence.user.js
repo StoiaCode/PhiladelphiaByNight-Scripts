@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Room Presence
 // @namespace    stoia.red
-// @version      1.2.0
+// @version      1.3.0
 // @description  Tracks who's actually in the room (via enter/leave lines, resynced by /look) in a new "Present" tab, and draws momentary arrows for looks/whispers/mentions instead of leaving them as chat spam.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -45,13 +45,32 @@
   // own grouping as a fallback.
   const DIRECTION_WORD = '(?:the\\s+)?(?:north|south|east|west|northeast|northwest|southeast|southwest|up|upward|down|downward|above|below|in|out)\\b';
   const ENTER_RE = new RegExp(`\\bfrom ${DIRECTION_WORD}`, 'iu');
-  const LEAVE_RE = new RegExp(`\\b(?:to|towards) ${DIRECTION_WORD}`, 'iu');
+  // "in the direction of" confirmed as a third leave preposition alongside
+  // "to"/"towards" ("drifts away into the shadows in the direction of the
+  // east."). Only confirmed for leaving so far, not added to ENTER_RE.
+  const LEAVE_RE = new RegExp(`\\b(?:to|towards|in the direction of) ${DIRECTION_WORD}`, 'iu');
   // Also known, deliberately not chased yet (per explicit call — /look's
   // periodic resync is the safety net for exactly this): some leave lines
   // describe boarding a vehicle rather than moving in a direction at all,
   // e.g. "Sparrow steps aboard the waiting train." — no "to"/"towards" +
   // direction anywhere in it, so LEAVE_RE doesn't (and isn't meant to) catch
   // it. Same graceful-drift handling as the "downward" gap above.
+
+  // Confirmed real example, no direction phrasing at all ("Weevil seems to
+  // suddenly exist where a moment ago there was nothing.") — reads like a
+  // fixed message tied to a specific mechanic (dropping a concealment
+  // power, most likely) rather than customizable flavor text, similar to
+  // how LOOKS_AROUND_RE is fixed. Treated as its own supplementary enter
+  // signal alongside ENTER_RE.
+  const MATERIALIZE_RE = /^(.+) seems to suddenly exist where a moment ago there was nothing\.$/i;
+
+  // Duplicated from declutter, same wording/caveat — used here not to hide
+  // the line (declutter, if installed, already owns that) but as an
+  // additional enter/leave-equivalent signal for the roster specifically:
+  // entering torpor means someone isn't really present/active anymore,
+  // waking up brings them back. Read-only — never touches the article's DOM.
+  const TORPOR_RE = /\bentered torpor\b/i;
+  const AWOKEN_RE = /\bhas awoken\b/i;
 
   // Duplicated verbatim from declutter — confirmed from real traffic to never
   // carry custom flavor text, unlike enter/leave. Identity-recovery only here
@@ -468,6 +487,29 @@
     if (whisper) { handleWhisper(whisper[1].trim(), whisper[2].trim(), article); return true; }
 
     if (LOOKS_AROUND_RE.test(text)) { hideKeepText(article); return true; }
+
+    // Torpor/awoken: roster-only signals, never hide the line — declutter
+    // (if installed) already owns hiding/reconnect-suppression for these.
+    if (TORPOR_RE.test(text)) {
+      const resolved = resolveAgainstRoster(text);
+      if (resolved && resolved.existing) removeRosterEntry(resolved.existing);
+      return true;
+    }
+    if (AWOKEN_RE.test(text)) {
+      const resolved = resolveAgainstRoster(text);
+      if (resolved) upsertRoster(resolved.key, 'awoken');
+      return true;
+    }
+
+    const materialize = MATERIALIZE_RE.exec(text);
+    if (materialize) {
+      const name = extractLeadingName(materialize[1].trim());
+      if (name) {
+        upsertRoster(name, 'enter');
+        hideKeepText(article);
+      }
+      return true; // unresolved (anonymous) — leave alone, same as any other unresolved enter
+    }
 
     const enters = ENTER_RE.test(text);
     const leaves = LEAVE_RE.test(text);

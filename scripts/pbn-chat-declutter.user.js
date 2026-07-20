@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Chat Declutter
 // @namespace    stoia.red
-// @version      1.3.1
+// @version      1.3.2
 // @description  Mutes and collapses consecutive/related SYSTEM spam (walk in / look around / walk out) into compact per-actor blocks, and hides "entered torpor" for other players for a bit in case it's just a flaky reconnect.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -94,7 +94,13 @@
   // whitelist rather than matching any word after "from"/"to".
   const DIRECTION_WORD = '(?:the\\s+)?(?:north|south|east|west|northeast|northwest|southeast|southwest|up|upward|down|downward|above|below|in|out)\\b';
   const ENTER_RE = new RegExp(`\\bfrom ${DIRECTION_WORD}`, 'iu');
-  const LEAVE_RE = new RegExp(`\\b(?:to|towards) ${DIRECTION_WORD}`, 'iu');
+  // "in the direction of" confirmed as a third leave preposition (kept in
+  // sync with Room Presence's copy).
+  const LEAVE_RE = new RegExp(`\\b(?:to|towards|in the direction of) ${DIRECTION_WORD}`, 'iu');
+  // Confirmed real example, no direction phrasing at all — a fixed message
+  // tied to a specific mechanic (dropping a concealment power, most
+  // likely). Kept in sync with Room Presence's copy.
+  const MATERIALIZE_RE = /^(.+) seems to suddenly exist where a moment ago there was nothing\.$/i;
   const LOOKS_AT_RE = /^(.+) looks at (.+)\.$/;
   const WHISPER_RE = /^(.+) whispers to (.+)\.$/;
 
@@ -394,15 +400,18 @@
     if (NON_MOVEMENT_RE.test(text) || text.length > MAX_MOVEMENT_LEN) return;
 
     // If pbn-room-presence.user.js is installed and mounted, it now owns
-    // enter/leave/looks-around/looks-at/whisper lines outright (hiding them
-    // and, where relevant, drawing an arrow instead) — defer to it entirely
-    // for these categories rather than also dimming/grouping them here.
-    // Everything else (torpor/awoken, non-movement passthrough, and
-    // grouping for movement lines Room Presence's heuristics don't
-    // recognize) is unaffected.
+    // enter/leave/looks-around/looks-at/whisper/materialize lines outright
+    // (hiding them and, where relevant, drawing an arrow instead) — defer
+    // to it entirely for these categories rather than also dimming/
+    // grouping them here. Torpor/awoken are NOT in this list — Room
+    // Presence reads them too (for the roster) but deliberately never
+    // hides them, leaving that fully owned by this script's own
+    // suppression logic below, unaffected either way. Non-movement
+    // passthrough and grouping for movement lines Room Presence's
+    // heuristics don't recognize are also unaffected.
     if (document.documentElement.dataset.pbnRoomPresenceActive === '1' &&
         (ENTER_RE.test(text) || LEAVE_RE.test(text) || LOOKS_AROUND_RE.test(text) ||
-         LOOKS_AT_RE.test(text) || WHISPER_RE.test(text))) {
+         LOOKS_AT_RE.test(text) || WHISPER_RE.test(text) || MATERIALIZE_RE.test(text))) {
       return;
     }
 
