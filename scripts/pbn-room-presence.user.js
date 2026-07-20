@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Room Presence
 // @namespace    stoia.red
-// @version      1.4.1
+// @version      1.4.2
 // @description  Tracks who's actually in the room (via enter/leave lines, resynced by /look) in a new "Present" tab, and draws momentary arrows for looks/whispers/mentions instead of leaving them as chat spam.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -59,7 +59,20 @@
   // constantly on unrelated prose.
   const DIRECTION_WORD = 'north|south|east|west|northeast|northwest|southeast|southwest|up|upward|down|downward|above|below';
   const DIRECTION_PHRASE = `(?:the\\s+)?(?:${DIRECTION_WORD})\\b`;
-  const ENTER_RE = new RegExp(`\\bfrom\\s+${DIRECTION_PHRASE}`, 'iu');
+  // CORRECTED per user (again): "from" isn't always adjacent to the
+  // direction word either — confirmed real example "creeps in from the
+  // shadows of the east." has descriptive flavor text wedged in between,
+  // so requiring "from" to sit directly next to the direction (only "the"
+  // allowed in between) made ENTER_RE miss it entirely, and it fell through
+  // to being misread as a LEAVE. [\s\S]*? (lazy, matches anything including
+  // nothing) now bridges an arbitrary gap between "from" and the direction
+  // word — this also means "from" no longer has to be the word immediately
+  // governing the direction, just has to appear somewhere BEFORE it, which
+  // is enough to rule out cases where "from" trails the direction instead
+  // (e.g. a leave phrased as "...heads towards the west, moving away from
+  // prying eyes" — "from" comes after "west" there, so this still wouldn't
+  // false-positive as an enter).
+  const ENTER_RE = new RegExp(`\\bfrom\\b[\\s\\S]*?${DIRECTION_PHRASE}`, 'iu');
   const DIRECTION_ANY_RE = new RegExp(`\\b${DIRECTION_PHRASE}`, 'iu');
   // Still known, deliberately not chased (per explicit call — /look's
   // periodic resync is the safety net for exactly this): some lines
