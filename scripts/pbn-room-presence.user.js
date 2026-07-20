@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Room Presence
 // @namespace    stoia.red
-// @version      1.4.0
+// @version      1.4.1
 // @description  Tracks who's actually in the room (via enter/leave lines, resynced by /look) in a new "Present" tab, and draws momentary arrows for looks/whispers/mentions instead of leaving them as chat spam.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -22,7 +22,18 @@
   // --------------------------------------------------------------------------
 
   const SELF_RE = /^You\b/;
-  const NAME_RE = new RegExp("^(\\p{Lu}[\\p{L}\\p{N}'-]*(?:\\s\\p{Lu}[\\p{L}\\p{N}'-]*){0,3})", 'u');
+  // Each word optionally ends in a period, but ONLY when followed by
+  // whitespace (lookahead, so the whitespace stays available as the
+  // separator between words) — confirmed real bug: "Ms. Clement" without
+  // this truncated to just "Ms", since the character class doesn't include
+  // "." and the next-word repeat group requires \s immediately after,
+  // which the period blocked. The lookahead specifically excludes a period
+  // at the very end of the string with nothing after it (an ordinary
+  // sentence-ending period), so this can't accidentally swallow the full
+  // stop off the end of an unrelated one-word sentence. Kept in sync with
+  // declutter's copy.
+  const NAME_WORD = "\\p{Lu}[\\p{L}\\p{N}'-]*(?:\\.(?=\\s))?";
+  const NAME_RE = new RegExp(`^(${NAME_WORD}(?:\\s${NAME_WORD}){0,3})`, 'u');
   const NAME_STOPWORDS = new Set(['A', 'An', 'The', 'Someone', 'Something', 'There', 'It', 'This', 'That']);
   const NON_MOVEMENT_RE = /^[-"[]/;
   const MAX_MOVEMENT_LEN = 200;

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Chat Declutter
 // @namespace    stoia.red
-// @version      1.3.3
+// @version      1.3.4
 // @description  Mutes and collapses consecutive/related SYSTEM spam (walk in / look around / walk out) into compact per-actor blocks, and hides "entered torpor" for other players for a bit in case it's just a flaky reconnect.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -46,7 +46,17 @@
   // plain \w doesn't cover and would silently truncate the match. No
   // trailing \b: JS's \b is itself ASCII-only, so a name ending in an
   // accented letter would fail the boundary check even with \p{L} above.
-  const NAME_RE = new RegExp(`^(\\p{Lu}[\\p{L}\\p{N}'-]*(?:\\s\\p{Lu}[\\p{L}\\p{N}'-]*){${NAME_MIN_WORDS - 1},3})`, 'u');
+  // Each word optionally ends in a period, but ONLY when followed by
+  // whitespace (lookahead, so the whitespace itself stays available for the
+  // separator between words) — confirmed real bug: "Ms. Clement" without
+  // this was truncating to just "Ms", since the character class doesn't
+  // include "." and the next-word repeat group requires \s immediately
+  // after, which the period blocked. The lookahead specifically excludes a
+  // period at the very end of the string with nothing after it (an
+  // ordinary sentence-ending period), so this can't accidentally swallow
+  // the full stop off the end of an unrelated one-word sentence.
+  const NAME_WORD = "\\p{Lu}[\\p{L}\\p{N}'-]*(?:\\.(?=\\s))?";
+  const NAME_RE = new RegExp(`^(${NAME_WORD}(?:\\s${NAME_WORD}){${NAME_MIN_WORDS - 1},3})`, 'u');
   // Anonymous/masked descriptions are common ("A massive woman with a
   // shaggy two-tone haircut...") and, being sentence-initial, their leading
   // article is capitalized too — with NAME_MIN_WORDS=1 that reads as a
@@ -55,7 +65,7 @@
   // that fake shared identity. Reject known non-name leading words.
   const NAME_STOPWORDS = new Set(['A', 'An', 'The', 'Someone', 'Something', 'There', 'It', 'This', 'That']);
   const FOLLOW_RE = /\bfollow(?:s|ing)\b/i;
-  const FOLLOW_TARGET_RE = /\bfollow(?:s|ing)\s+(\p{Lu}[\p{L}\p{N}'-]*(?:\s\p{Lu}[\p{L}\p{N}'-]*){0,3})/u;
+  const FOLLOW_TARGET_RE = new RegExp(`\\bfollow(?:s|ing)\\s+(${NAME_WORD}(?:\\s${NAME_WORD}){0,3})`, 'u');
   const TORPOR_RE = /\bentered torpor\b/i;
   const AWOKEN_RE = /\bhas awoken\b/i;
   // Confirmed from real traffic: "X looks around." never carries custom
