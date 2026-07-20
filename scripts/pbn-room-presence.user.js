@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PbN Room Presence
 // @namespace    stoia.red
-// @version      1.5.0
-// @description  Tracks who's actually in the room (via enter/leave lines, resynced by /look) in a new "Present" tab, and draws momentary arrows for looks/whispers/mentions instead of leaving them as chat spam.
+// @version      1.6.0
+// @description  Tracks who's actually in the room (via enter/leave lines, resynced by /look) in a new "Present" tab, flags unidentified entrants for a /look check, and draws momentary arrows for looks/whispers/mentions instead of leaving them as chat spam.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
 // @grant        GM_getValue
@@ -266,12 +266,15 @@
 
   // Short buffer of recent lines that couldn't be identified at all (e.g.
   // an anonymous character's very first mention). Ported from declutter —
-  // see MIN_LCP_LEN above for why this matters.
-  const recentOrphans = []; // { text, node }[]
+  // see MIN_LCP_LEN above for why this matters. unknownEntry (optional)
+  // links back to the placeholder roster row created for this line, if
+  // any, so a later similarity match can remove it instead of leaving a
+  // duplicate once the real identity is upserted.
+  const recentOrphans = []; // { text, node, unknownEntry }[]
   const ORPHAN_BUFFER_MAX = 20;
 
-  function recordOrphan(text, node) {
-    recentOrphans.push({ text, node });
+  function recordOrphan(text, node, unknownEntry) {
+    recentOrphans.push({ text, node, unknownEntry: unknownEntry || null });
     if (recentOrphans.length > ORPHAN_BUFFER_MAX) recentOrphans.shift();
   }
 
@@ -331,8 +334,41 @@
     const row = document.createElement('div');
     row.textContent = entry.displayText;
     row.title = entry.primaryKey;
-    row.style.cssText = 'padding:4px 2px;font:12px/1.4 inherit;border-bottom:1px solid rgba(255,255,255,0.08);';
+    row.style.cssText = entry.isUnknown
+      ? 'padding:4px 2px 4px 6px;font:12px/1.4 inherit;font-style:italic;color:#ffb347;border-bottom:1px solid rgba(255,255,255,0.08);border-left:3px solid #ffb347;'
+      : 'padding:4px 2px;font:12px/1.4 inherit;border-bottom:1px solid rgba(255,255,255,0.08);';
     return row;
+  }
+
+  let unknownCounter = 0;
+
+  // A synthetic placeholder row for an enter (or "looks around.") line that
+  // couldn't be identified at all — anonymous, and no buffered orphan to
+  // borrow an identity from either. Previously this line was either dropped
+  // silently (looks-around) or left as raw, unstyled [SYSTEM] text sitting
+  // in chat (the general enter/leave fallback) — neither is an actual
+  // notification. This gives it a distinctly-styled row instead, so there's
+  // always something visible telling you to /look. Cleaned up automatically
+  // the moment either a similar later line resolves it (see the
+  // findOrphanBySimilarity call sites) or the next /look resync runs — a
+  // resync's confirmed keys always come from real bullet text, so a
+  // NUL-prefixed placeholder key can never match one and gets pruned like
+  // any other no-longer-present entry.
+  function createUnknownEntry() {
+    const key = `\u0000unknown:${unknownCounter++}`;
+    const entry = {
+      identityKeys: new Set([key]),
+      primaryKey: key,
+      displayText: '⚠ Unregistered person — do /look',
+      isAnonymous: true,
+      isUnknown: true,
+      rowEl: null,
+      lastSource: 'unknown',
+    };
+    roster.set(key, entry);
+    entry.rowEl = createRosterRow(entry);
+    if (presentPanelEl) presentPanelEl.appendChild(entry.rowEl);
+    return entry;
   }
 
   function upsertRoster(key, source) {
@@ -585,8 +621,12 @@
           upsertRoster(resolved.key, 'enter');
         } else {
           const similar = findOrphanBySimilarity(subject);
-          if (similar) upsertRoster(similar.key, 'enter');
-          else recordOrphan(subject, article);
+          if (similar) {
+            if (similar.orphan.unknownEntry) removeRosterEntry(similar.orphan.unknownEntry);
+            upsertRoster(similar.key, 'enter');
+          } else {
+            recordOrphan(subject, article, createUnknownEntry());
+          }
         }
       }
       return true;
@@ -624,21 +664,35 @@
     // preposition list needed at all; see the comment on DIRECTION_WORD.
 
     let resolved = resolveAgainstRoster(text);
+    let matchedUnknownEntry = null;
     if (!resolved) {
       // Anonymous and never seen before — last resort, see if this line
       // shares a long exact leading run with another still-unidentified
       // recent line (e.g. this same anonymous character's entry, found via
       // a later exit that happens to share the same description prefix).
       const similar = findOrphanBySimilarity(text);
-      if (similar) resolved = { key: similar.key, existing: roster.get(similar.key) || null };
+      if (similar) {
+        resolved = { key: similar.key, existing: roster.get(similar.key) || null };
+        matchedUnknownEntry = similar.orphan.unknownEntry;
+      }
     }
     if (!resolved) {
-      // Still nothing — buffer it in case a later line (an exit, another
-      // "looks around.", anything) reveals who this was.
-      recordOrphan(text, article);
+      // Still nothing. On a leave this is a genuine dead end (no identity
+      // to remove anything under) — buffer and move on, raw line left
+      // visible same as before. On an enter, someone real is now in the
+      // room and we have zero trace of who — surface a placeholder row
+      // instead of just hiding the fact, per user request; a later similar
+      // line or the next /look resync will replace/remove it.
+      if (enters) {
+        hideKeepText(article);
+        recordOrphan(text, article, createUnknownEntry());
+      } else {
+        recordOrphan(text, article);
+      }
       return true;
     }
 
+    if (matchedUnknownEntry) removeRosterEntry(matchedUnknownEntry);
     if (enters) upsertRoster(resolved.key, 'enter');
     else if (resolved.existing) removeRosterEntry(resolved.existing);
     hideKeepText(article);
