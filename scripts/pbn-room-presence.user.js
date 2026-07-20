@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Room Presence
 // @namespace    stoia.red
-// @version      1.0.1
+// @version      1.0.2
 // @description  Tracks who's actually in the room (via enter/leave lines, resynced by /look) in a new "Present" tab, and draws momentary arrows for looks/whispers/mentions instead of leaving them as chat spam.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -56,13 +56,19 @@
   const LOOKS_AT_RE = /^(.+) looks at (.+)\.$/;
   const WHISPER_RE = /^(.+) whispers to (.+)\.$/;
 
-  // UNCONFIRMED exact markup — see README caveats. The [LOCATION] tag class
-  // itself IS confirmed (directly inspected this session:
-  // <span class="text-teal-8 text-weight-bold">[LOCATION]</span>), but the
-  // "You see:" bullet list's internal structure (separate elements vs. one
-  // text blob, exact bullet glyph) has not been. Written defensively against
-  // a single multi-line text blob using literal newlines, since that's
-  // already confirmed to be how other multi-paragraph [LOCATION] bodies work.
+  // CONFIRMED live: the roster listing is NOT part of the [LOCATION]-tagged
+  // room-description article at all — it's its own separate article with no
+  // [LOCATION]/[SYSTEM] tag, identified instead by <p class="look-output">:
+  //   <p class="look-output"><strong>You see:</strong><br>\n• Sparrow</p>
+  // An empty room instead renders <p class="look-output"><em>There is no
+  // one else of note here.</em></p> (no "You see:" at all) — treated as a
+  // confirmed empty roster, not "not a resync payload." Bullet glyph "•"
+  // and the <br>-separated-lines shape are both confirmed; the exact
+  // separator between multiple bullets (single vs. double <br>) is not yet
+  // seen firsthand (only one person was present when this was captured),
+  // but the parser already tolerates blank lines between bullets either way.
+  const LOOK_OUTPUT_SELECTOR = 'p.look-output';
+  const NO_ONE_ELSE_RE = /^There is no one else of note here\.?$/i;
   const YOU_SEE_RE = /^You see:?$/i;
   const ROSTER_BULLET_RE = /^[•\-*]\s*/;
 
@@ -89,18 +95,13 @@
     return full.replace(/^\[SYSTEM\]\s*/, '');
   }
 
-  // Unlike getSystemText, deliberately does NOT collapse whitespace — the
+  // Deliberately does NOT collapse whitespace (unlike getSystemText) — the
   // roster bullet list's line structure is load-bearing. Uses innerText (not
-  // textContent) so rendered line breaks are preserved as \n, consistent
-  // with an earlier confirmed multi-paragraph [LOCATION] example this
-  // session ("[LOCATION] The Lincoln Room\nA long dining hall...").
-  function getLocationText(article) {
-    const p = article.querySelector('p');
+  // textContent) so <br>-driven line breaks are preserved as \n.
+  function getLookOutputText(article) {
+    const p = article.querySelector(LOOK_OUTPUT_SELECTOR);
     if (!p) return null;
-    const tagSpan = p.querySelector('span.text-teal-8.text-weight-bold');
-    if (!tagSpan || tagSpan.textContent.trim() !== '[LOCATION]') return null;
-    const full = article.innerText || '';
-    return full.replace(/^\[LOCATION\]\s*/, '');
+    return p.innerText || '';
   }
 
   // Same technique as declutter's hideKeepText: keeps the node fully
@@ -223,10 +224,11 @@
     }
   }
 
-  function parseRosterBullets(locationText) {
-    const lines = locationText.split('\n').map(l => l.trim());
+  function parseRosterBullets(lookText) {
+    if (NO_ONE_ELSE_RE.test(lookText.trim())) return []; // confirmed empty room
+    const lines = lookText.split('\n').map(l => l.trim());
     const start = lines.findIndex(l => YOU_SEE_RE.test(l));
-    if (start === -1) return null; // not a /look roster payload at all
+    if (start === -1) return null; // some other kind of look-output, not a roster payload
     const names = [];
     for (let i = start + 1; i < lines.length; i++) {
       if (ROSTER_BULLET_RE.test(lines[i])) names.push(lines[i].replace(ROSTER_BULLET_RE, '').trim());
@@ -413,9 +415,11 @@
     return true;
   }
 
-  // Returns true if this article was [LOCATION]-tagged at all.
-  function handleLocationArticle(article) {
-    const text = getLocationText(article);
+  // Returns true if this article was look-output-tagged at all (a room
+  // description article's own [LOCATION] tag does NOT match this — the
+  // roster listing is a separate article, see LOOK_OUTPUT_SELECTOR above).
+  function handleLookOutputArticle(article) {
+    const text = getLookOutputText(article);
     if (text === null) return false;
     const bullets = parseRosterBullets(text);
     if (bullets !== null) resyncRoster(bullets);
@@ -426,8 +430,14 @@
   // Mention arrows — dialogue (say/pose/LOOC) lines only
   // --------------------------------------------------------------------------
 
+  // Confirmed live: the speaker-name span's class isn't the fixed
+  // "chat-name-anonymous" seen earlier this session for one character — it's
+  // a per-character class ("chat-name-color-8", "chat-name-color-12", ...),
+  // with "chat-name-anonymous" apparently just one of several variants
+  // (unclear whether it's a genuine fallback or specific to some character
+  // state). Match the whole family by prefix instead of one fixed class.
   function getDialogueSpeaker(article) {
-    const nameSpan = article.querySelector('span.chat-name-anonymous');
+    const nameSpan = article.querySelector('[class^="chat-name-"]');
     return nameSpan ? nameSpan.textContent.trim() : null;
   }
 
@@ -460,7 +470,7 @@
   // --------------------------------------------------------------------------
 
   function processArticle(article) {
-    if (handleLocationArticle(article)) return;
+    if (handleLookOutputArticle(article)) return;
     if (handleSystemArticle(article)) return;
     handleDialogueArticle(article);
   }
