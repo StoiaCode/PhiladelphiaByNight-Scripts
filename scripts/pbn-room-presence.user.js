@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Room Presence
 // @namespace    stoia.red
-// @version      1.0.0
+// @version      1.0.1
 // @description  Tracks who's actually in the room (via enter/leave lines, resynced by /look) in a new "Present" tab, and draws momentary arrows for looks/whispers/mentions instead of leaving them as chat spam.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -28,15 +28,22 @@
   // short registered key (shouldn't happen given NAME_STOPWORDS, cheap safety).
   const MIN_PREFIX_KEY_LEN = 8;
 
-  // Confirmed from real traffic, both verb forms: enter lines always contain
-  // "from the <direction>"; leave lines always contain "to the"/"towards the
-  // <direction>". NOT exhaustive — e.g. "Coyote Duran drags her feet along
-  // downward." matches neither. When that happens the roster simply doesn't
-  // update from that line; the next /look resync corrects any drift. This is
-  // intentional — graceful drift, not perfection — and pbn-chat-declutter.js
-  // (if installed) still handles that line via its own grouping as a fallback.
-  const ENTER_RE = /\bfrom the \p{L}+/iu;
-  const LEAVE_RE = /\b(?:to|towards) the \p{L}+/iu;
+  // Confirmed from real traffic: enter lines contain "from the <direction>"
+  // OR "from <direction>" with no "the" at all ("strides in from below,
+  // adjusting his jacket..." — live example caught mid-session); leave lines
+  // contain "to the"/"towards the <direction>". A whitelist of direction
+  // words (rather than matching any word after "from"/"to") is deliberately
+  // used here — it's both safer against false positives and fixes the
+  // "the"-optional case in one move. NOT exhaustive — e.g. "Coyote Duran
+  // drags her feet along downward." uses neither "from"/"to"/"towards" at
+  // all, so it matches neither RE. When that happens the roster simply
+  // doesn't update from that line; the next /look resync corrects any
+  // drift. Intentional — graceful drift, not perfection — and
+  // pbn-chat-declutter.js (if installed) still handles that line via its
+  // own grouping as a fallback.
+  const DIRECTION_WORD = '(?:the\\s+)?(?:north|south|east|west|northeast|northwest|southeast|southwest|up|upward|down|downward|above|below|in|out)\\b';
+  const ENTER_RE = new RegExp(`\\bfrom ${DIRECTION_WORD}`, 'iu');
+  const LEAVE_RE = new RegExp(`\\b(?:to|towards) ${DIRECTION_WORD}`, 'iu');
   // Duplicated verbatim from declutter — confirmed from real traffic to never
   // carry custom flavor text, unlike enter/leave. Identity-recovery only here
   // (see handleSystemArticle) — never itself an add/remove signal, since

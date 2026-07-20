@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Chat Declutter
 // @namespace    stoia.red
-// @version      1.3.0
+// @version      1.3.1
 // @description  Mutes and collapses consecutive/related SYSTEM spam (walk in / look around / walk out) into compact per-actor blocks, and hides "entered torpor" for other players for a bit in case it's just a flaky reconnect.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -88,9 +88,13 @@
   // Duplicated from pbn-room-presence.user.js (if installed) purely to
   // recognize categories that script now owns outright — see the
   // document.documentElement.dataset.pbnRoomPresenceActive check in
-  // handleArticle() below. Not otherwise used by declutter's own logic.
-  const ENTER_RE = /\bfrom the \p{L}+/iu;
-  const LEAVE_RE = /\b(?:to|towards) the \p{L}+/iu;
+  // handleArticle() below. Not otherwise used by declutter's own logic. Kept
+  // in sync with Room Presence's copy — confirmed live that enter lines can
+  // say "from below" with no "the" at all, hence the direction-word
+  // whitelist rather than matching any word after "from"/"to".
+  const DIRECTION_WORD = '(?:the\\s+)?(?:north|south|east|west|northeast|northwest|southeast|southwest|up|upward|down|downward|above|below|in|out)\\b';
+  const ENTER_RE = new RegExp(`\\bfrom ${DIRECTION_WORD}`, 'iu');
+  const LEAVE_RE = new RegExp(`\\b(?:to|towards) ${DIRECTION_WORD}`, 'iu');
   const LOOKS_AT_RE = /^(.+) looks at (.+)\.$/;
   const WHISPER_RE = /^(.+) whispers to (.+)\.$/;
 
