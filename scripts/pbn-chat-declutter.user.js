@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Chat Declutter
 // @namespace    stoia.red
-// @version      1.3.2
+// @version      1.3.3
 // @description  Mutes and collapses consecutive/related SYSTEM spam (walk in / look around / walk out) into compact per-actor blocks, and hides "entered torpor" for other players for a bit in case it's just a flaky reconnect.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -88,15 +88,23 @@
   // Duplicated from pbn-room-presence.user.js (if installed) purely to
   // recognize categories that script now owns outright — see the
   // document.documentElement.dataset.pbnRoomPresenceActive check in
-  // handleArticle() below. Not otherwise used by declutter's own logic. Kept
-  // in sync with Room Presence's copy — confirmed live that enter lines can
-  // say "from below" with no "the" at all, hence the direction-word
-  // whitelist rather than matching any word after "from"/"to".
-  const DIRECTION_WORD = '(?:the\\s+)?(?:north|south|east|west|northeast|northwest|southeast|southwest|up|upward|down|downward|above|below|in|out)\\b';
-  const ENTER_RE = new RegExp(`\\bfrom ${DIRECTION_WORD}`, 'iu');
-  // "in the direction of" confirmed as a third leave preposition (kept in
-  // sync with Room Presence's copy).
-  const LEAVE_RE = new RegExp(`\\b(?:to|towards|in the direction of) ${DIRECTION_WORD}`, 'iu');
+  // handleArticle() below. Not otherwise used by declutter's own logic.
+  // CORRECTED per user, kept in sync with Room Presence's copy: only the
+  // direction word itself is a reliable anchor — the connecting
+  // preposition is player-composed flavor text like everything else, so
+  // there's no leave-preposition list at all anymore. "from" stays as the
+  // dedicated enter anchor in Room Presence's own copy (about as close to
+  // un-customizable as English gets for "arriving from a place") — not
+  // needed here, since this gate only needs to know "does Room Presence
+  // own this line at all," and DIRECTION_ANY_RE alone already covers both
+  // enter and leave (every ENTER_RE match is by definition also a
+  // DIRECTION_ANY_RE match). "in"/"out" are deliberately excluded from the
+  // direction list — no confirmed use as an actual movement direction in
+  // this game, and including them would make the looser "any direction
+  // word" match fire on ordinary prose.
+  const DIRECTION_WORD = 'north|south|east|west|northeast|northwest|southeast|southwest|up|upward|down|downward|above|below';
+  const DIRECTION_PHRASE = `(?:the\\s+)?(?:${DIRECTION_WORD})\\b`;
+  const DIRECTION_ANY_RE = new RegExp(`\\b${DIRECTION_PHRASE}`, 'iu');
   // Confirmed real example, no direction phrasing at all — a fixed message
   // tied to a specific mechanic (dropping a concealment power, most
   // likely). Kept in sync with Room Presence's copy.
@@ -410,7 +418,7 @@
     // passthrough and grouping for movement lines Room Presence's
     // heuristics don't recognize are also unaffected.
     if (document.documentElement.dataset.pbnRoomPresenceActive === '1' &&
-        (ENTER_RE.test(text) || LEAVE_RE.test(text) || LOOKS_AROUND_RE.test(text) ||
+        (DIRECTION_ANY_RE.test(text) || LOOKS_AROUND_RE.test(text) ||
          LOOKS_AT_RE.test(text) || WHISPER_RE.test(text) || MATERIALIZE_RE.test(text))) {
       return;
     }

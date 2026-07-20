@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Room Presence
 // @namespace    stoia.red
-// @version      1.3.0
+// @version      1.4.0
 // @description  Tracks who's actually in the room (via enter/leave lines, resynced by /look) in a new "Present" tab, and draws momentary arrows for looks/whispers/mentions instead of leaving them as chat spam.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -30,31 +30,38 @@
   // short registered key (shouldn't happen given NAME_STOPWORDS, cheap safety).
   const MIN_PREFIX_KEY_LEN = 8;
 
-  // Confirmed from real traffic: enter lines contain "from the <direction>"
-  // OR "from <direction>" with no "the" at all ("strides in from below,
-  // adjusting his jacket..." — live example caught mid-session); leave lines
-  // contain "to the"/"towards the <direction>". A whitelist of direction
-  // words (rather than matching any word after "from"/"to") is deliberately
-  // used here — it's both safer against false positives and fixes the
-  // "the"-optional case in one move. NOT exhaustive — e.g. "Coyote Duran
-  // drags her feet along downward." uses neither "from"/"to"/"towards" at
-  // all, so it matches neither RE. When that happens the roster simply
-  // doesn't update from that line; the next /look resync corrects any
-  // drift. Intentional — graceful drift, not perfection — and
-  // pbn-chat-declutter.js (if installed) still handles that line via its
-  // own grouping as a fallback.
-  const DIRECTION_WORD = '(?:the\\s+)?(?:north|south|east|west|northeast|northwest|southeast|southwest|up|upward|down|downward|above|below|in|out)\\b';
-  const ENTER_RE = new RegExp(`\\bfrom ${DIRECTION_WORD}`, 'iu');
-  // "in the direction of" confirmed as a third leave preposition alongside
-  // "to"/"towards" ("drifts away into the shadows in the direction of the
-  // east."). Only confirmed for leaving so far, not added to ENTER_RE.
-  const LEAVE_RE = new RegExp(`\\b(?:to|towards|in the direction of) ${DIRECTION_WORD}`, 'iu');
-  // Also known, deliberately not chased yet (per explicit call — /look's
-  // periodic resync is the safety net for exactly this): some leave lines
-  // describe boarding a vehicle rather than moving in a direction at all,
-  // e.g. "Sparrow steps aboard the waiting train." — no "to"/"towards" +
-  // direction anywhere in it, so LEAVE_RE doesn't (and isn't meant to) catch
-  // it. Same graceful-drift handling as the "downward" gap above.
+  // CORRECTED per user: only the direction word itself is solid — the
+  // connecting preposition is player-composed flavor text just like
+  // everything else surrounding it, so trying to whitelist specific
+  // leave-prepositions ("to"/"towards"/"in the direction of", and whatever
+  // else hasn't shown up yet) is a losing battle, not a fixable regex.
+  // "from" is the one exception: it's close to impossible to phrase
+  // "arriving from a place" any other way in English, so it stays as the
+  // dedicated enter anchor. Leaving is instead defined as "a bare direction
+  // word is present, and it's not part of an enter phrase" — no leave
+  // preposition list at all. "in"/"out" are deliberately excluded from the
+  // direction list itself: unlike the compass points and up/down/above/
+  // below (all separately confirmed in real traffic), bare "in"/"out" have
+  // no confirmed use as an actual movement direction in this game, and
+  // they're common enough as ordinary English words that including them
+  // here would make the now-looser "any direction word" leave check fire
+  // constantly on unrelated prose.
+  const DIRECTION_WORD = 'north|south|east|west|northeast|northwest|southeast|southwest|up|upward|down|downward|above|below';
+  const DIRECTION_PHRASE = `(?:the\\s+)?(?:${DIRECTION_WORD})\\b`;
+  const ENTER_RE = new RegExp(`\\bfrom\\s+${DIRECTION_PHRASE}`, 'iu');
+  const DIRECTION_ANY_RE = new RegExp(`\\b${DIRECTION_PHRASE}`, 'iu');
+  // Still known, deliberately not chased (per explicit call — /look's
+  // periodic resync is the safety net for exactly this): some lines
+  // describe movement with no direction word anywhere at all, e.g.
+  // "Sparrow steps aboard the waiting train." or "Coyote Duran drags her
+  // feet along downward." (that one WAS a direction word once, before this
+  // rework — now correctly still unclassifiable on its own, since "along
+  // downward" is not "from" and IS a bare direction, meaning it now
+  // actually resolves as a LEAVE. Worth re-confirming live.) When no
+  // direction word is present at all, the roster simply doesn't update
+  // from that line; the next /look resync corrects any drift. Intentional
+  // — graceful drift, not perfection — and pbn-chat-declutter.js (if
+  // installed) still handles unrecognized lines via its own grouping.
 
   // Confirmed real example, no direction phrasing at all ("Weevil seems to
   // suddenly exist where a moment ago there was nothing.") — reads like a
@@ -511,9 +518,13 @@
       return true; // unresolved (anonymous) — leave alone, same as any other unresolved enter
     }
 
+    // No direction word at all — genuinely can't classify, leave for
+    // declutter's fallback grouping (e.g. "steps aboard the waiting train.").
+    if (!DIRECTION_ANY_RE.test(text)) return true;
+
     const enters = ENTER_RE.test(text);
-    const leaves = LEAVE_RE.test(text);
-    if (enters === leaves) return true; // both or neither — ambiguous, leave for declutter's fallback grouping
+    // Has a direction word but isn't an enter — treat as a leave. No leave
+    // preposition list needed at all; see the comment on DIRECTION_WORD.
 
     const resolved = resolveAgainstRoster(text);
     if (!resolved) return true; // unresolved — same fallback
