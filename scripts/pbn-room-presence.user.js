@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PbN Room Presence
 // @namespace    stoia.red
-// @version      1.6.0
-// @description  Tracks who's actually in the room (via enter/leave lines, resynced by /look) in a new "Present" tab, flags unidentified entrants for a /look check, and draws momentary arrows for looks/whispers/mentions instead of leaving them as chat spam.
+// @version      1.7.0
+// @description  Tracks who's actually in the room (via enter/leave lines, resynced by /look) in a new "Present" tab, flashes and highlights new arrivals, flags unidentified entrants for a /look check, and draws momentary arrows for looks/whispers/mentions instead of leaving them as chat spam.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
 // @grant        GM_getValue
@@ -183,6 +183,12 @@
   // far more than a full registered name ("Cade Karstenson") does, and this
   // can't be tuned without live false-positive data.
   const MATCH_FIRST_NAME_ONLY = false;
+  // How long a freshly-added roster row keeps a highlighted background
+  // before fading back to normal, and roughly the window during which
+  // someone counts as a "new arrival" worth flashing the panel for. Longer
+  // than ARROW_FADE_MS on purpose — this is a "notice this" duration for a
+  // person, not a brief interaction animation.
+  const NEW_ARRIVAL_HIGHLIGHT_MS = 15000;
 
   // Confirmed real bug: an anonymous character's very first mention (e.g.
   // "A quiet blonde woman with a baseball cap enters from below.") has
@@ -340,6 +346,47 @@
     return row;
   }
 
+  // Pulses the Present toggle button (always visible) and, if the panel is
+  // currently open, the panel itself — an orange box-shadow flash so a new
+  // arrival is noticeable even if you're not looking at the tab right now.
+  function flashPresentUI() {
+    const toggleBtn = document.getElementById('pbn-present-toggle');
+    const targets = [toggleBtn, presentOpen ? presentPanelEl : null].filter(Boolean);
+    for (const el of targets) {
+      el.animate(
+        [
+          { boxShadow: '0 0 0 0 rgba(255,179,71,0)' },
+          { boxShadow: '0 0 10px 3px rgba(255,179,71,0.9)', offset: 0.15 },
+          { boxShadow: '0 0 0 0 rgba(255,179,71,0)', offset: 0.35 },
+          { boxShadow: '0 0 10px 3px rgba(255,179,71,0.9)', offset: 0.5 },
+          { boxShadow: '0 0 0 0 rgba(255,179,71,0)' },
+        ],
+        { duration: 1200 }
+      );
+    }
+  }
+
+  // Called only for a brand-new roster entry (never on an update to one
+  // already tracked) — see the two call sites below. Fades a highlighted
+  // background out of the row over NEW_ARRIVAL_HIGHLIGHT_MS (same
+  // Web-Animations-API technique as drawArrow's fade) so a fresh face stays
+  // visually distinct for a while even after the initial flash is gone, and
+  // pulses the toggle/panel once so it's noticeable even with the tab
+  // closed.
+  function markNewArrival(entry) {
+    if (entry.rowEl) {
+      entry.rowEl.animate(
+        [
+          { backgroundColor: 'rgba(255,179,71,0.55)' },
+          { backgroundColor: 'rgba(255,179,71,0.55)', offset: 0.5 },
+          { backgroundColor: 'rgba(255,179,71,0)' },
+        ],
+        { duration: NEW_ARRIVAL_HIGHLIGHT_MS, fill: 'forwards' }
+      );
+    }
+    flashPresentUI();
+  }
+
   let unknownCounter = 0;
 
   // A synthetic placeholder row for an enter (or "looks around.") line that
@@ -368,6 +415,7 @@
     roster.set(key, entry);
     entry.rowEl = createRosterRow(entry);
     if (presentPanelEl) presentPanelEl.appendChild(entry.rowEl);
+    markNewArrival(entry);
     return entry;
   }
 
@@ -388,6 +436,11 @@
     roster.set(key, entry);
     entry.rowEl = createRosterRow(entry);
     if (presentPanelEl) presentPanelEl.appendChild(entry.rowEl);
+    // Only an actual arrival ('enter') is worth flashing — not your own
+    // seed entry ('self'), someone waking from torpor ('awoken', they were
+    // already counted as present before torpor), or a /look resync merely
+    // confirming someone the roster didn't already know about.
+    if (source === 'enter') markNewArrival(entry);
     return entry;
   }
 
