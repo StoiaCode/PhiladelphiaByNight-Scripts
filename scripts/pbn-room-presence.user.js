@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Room Presence
 // @namespace    stoia.red
-// @version      1.4.2
+// @version      1.5.0
 // @description  Tracks who's actually in the room (via enter/leave lines, resynced by /look) in a new "Present" tab, and draws momentary arrows for looks/whispers/mentions instead of leaving them as chat spam.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -184,6 +184,18 @@
   // can't be tuned without live false-positive data.
   const MATCH_FIRST_NAME_ONLY = false;
 
+  // Confirmed real bug: an anonymous character's very first mention (e.g.
+  // "A quiet blonde woman with a baseball cap enters from below.") has
+  // nothing to resolve against — no existing roster entry to prefix-match,
+  // and no fixed suffix in THIS message to isolate her description from
+  // the verb — so it was silently dropped entirely. Ported from declutter:
+  // if a later unidentified line shares a long exact leading run with this
+  // one, that shared prefix IS the description (a fixed field only the
+  // trailing flavor varies around), letting the pair resolve each other
+  // even with no clean anchor in either message alone. Same threshold/
+  // reasoning as declutter's copy.
+  const MIN_LCP_LEN = 20;
+
   // --------------------------------------------------------------------------
   // DOM helpers (duplicated from pbn-chat-declutter.user.js)
   // --------------------------------------------------------------------------
@@ -250,6 +262,46 @@
       if (text === key || text.startsWith(key)) return { key, existing: entry };
     }
     return null;
+  }
+
+  // Short buffer of recent lines that couldn't be identified at all (e.g.
+  // an anonymous character's very first mention). Ported from declutter —
+  // see MIN_LCP_LEN above for why this matters.
+  const recentOrphans = []; // { text, node }[]
+  const ORPHAN_BUFFER_MAX = 20;
+
+  function recordOrphan(text, node) {
+    recentOrphans.push({ text, node });
+    if (recentOrphans.length > ORPHAN_BUFFER_MAX) recentOrphans.shift();
+  }
+
+  // Longest run of identical leading characters — see declutter's copy for
+  // the full reasoning (it can only stop where two texts actually first
+  // differ, which for a fixed description + arbitrary flavor text is
+  // exactly the boundary between them).
+  function commonPrefix(a, b) {
+    let i = 0;
+    const len = Math.min(a.length, b.length);
+    while (i < len && a[i] === b[i]) i++;
+    return a.slice(0, i);
+  }
+
+  // Last-resort fallback for a fully unidentified line: does it share a
+  // long enough leading run with some other still-unidentified recent line
+  // to infer they're the same anonymous character? Picks the best
+  // (longest) match among buffered orphans rather than the first one found.
+  function findOrphanBySimilarity(text) {
+    let bestIdx = -1;
+    let bestKey = '';
+    for (let i = 0; i < recentOrphans.length; i++) {
+      const cp = commonPrefix(text, recentOrphans[i].text).trimEnd();
+      if (cp.length >= MIN_LCP_LEN && cp.length > bestKey.length) {
+        bestKey = cp;
+        bestIdx = i;
+      }
+    }
+    if (bestIdx === -1) return null;
+    return { orphan: recentOrphans.splice(bestIdx, 1)[0], key: bestKey };
   }
 
   // --------------------------------------------------------------------------
@@ -517,7 +569,28 @@
     const whisper = WHISPER_RE.exec(text);
     if (whisper) { handleWhisper(whisper[1].trim(), whisper[2].trim(), article); return true; }
 
-    if (LOOKS_AROUND_RE.test(text)) { hideKeepText(article); return true; }
+    const looksAround = LOOKS_AROUND_RE.exec(text);
+    if (looksAround) {
+      hideKeepText(article);
+      const subject = looksAround[1].trim();
+      // LOOKS_AROUND_RE's fixed suffix cleanly isolates the subject even
+      // when anonymous — use it to confirm presence (they're doing
+      // something, so they're here) whether or not we ever saw them enter.
+      const name = extractLeadingName(subject);
+      if (name) {
+        upsertRoster(name, 'enter');
+      } else {
+        const resolved = resolveAgainstRoster(subject);
+        if (resolved) {
+          upsertRoster(resolved.key, 'enter');
+        } else {
+          const similar = findOrphanBySimilarity(subject);
+          if (similar) upsertRoster(similar.key, 'enter');
+          else recordOrphan(subject, article);
+        }
+      }
+      return true;
+    }
 
     // Torpor/awoken: roster-only signals, never hide the line — declutter
     // (if installed) already owns hiding/reconnect-suppression for these.
@@ -534,12 +607,12 @@
 
     const materialize = MATERIALIZE_RE.exec(text);
     if (materialize) {
-      const name = extractLeadingName(materialize[1].trim());
-      if (name) {
-        upsertRoster(name, 'enter');
-        hideKeepText(article);
-      }
-      return true; // unresolved (anonymous) — leave alone, same as any other unresolved enter
+      // Same fixed-suffix reasoning as LOOKS_AROUND_RE — the captured group
+      // is already the clean identity, named or anonymous, no extra
+      // resolution needed.
+      upsertRoster(materialize[1].trim(), 'enter');
+      hideKeepText(article);
+      return true;
     }
 
     // No direction word at all — genuinely can't classify, leave for
@@ -550,8 +623,21 @@
     // Has a direction word but isn't an enter — treat as a leave. No leave
     // preposition list needed at all; see the comment on DIRECTION_WORD.
 
-    const resolved = resolveAgainstRoster(text);
-    if (!resolved) return true; // unresolved — same fallback
+    let resolved = resolveAgainstRoster(text);
+    if (!resolved) {
+      // Anonymous and never seen before — last resort, see if this line
+      // shares a long exact leading run with another still-unidentified
+      // recent line (e.g. this same anonymous character's entry, found via
+      // a later exit that happens to share the same description prefix).
+      const similar = findOrphanBySimilarity(text);
+      if (similar) resolved = { key: similar.key, existing: roster.get(similar.key) || null };
+    }
+    if (!resolved) {
+      // Still nothing — buffer it in case a later line (an exit, another
+      // "looks around.", anything) reveals who this was.
+      recordOrphan(text, article);
+      return true;
+    }
 
     if (enters) upsertRoster(resolved.key, 'enter');
     else if (resolved.existing) removeRosterEntry(resolved.existing);
