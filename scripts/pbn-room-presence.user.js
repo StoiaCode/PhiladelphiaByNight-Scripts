@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Room Presence
 // @namespace    stoia.red
-// @version      1.1.0
+// @version      1.1.1
 // @description  Tracks who's actually in the room (via enter/leave lines, resynced by /look) in a new "Present" tab, and draws momentary arrows for looks/whispers/mentions instead of leaving them as chat spam.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -79,15 +79,21 @@
   const YOU_SEE_RE = /^You see:?$/i;
   const ROSTER_BULLET_RE = /^[•\-*]\s*/;
 
-  // Confirmed live (seen earlier this session): every room arrival — your
-  // own initial connect included — renders a plain narrative divider with
-  // no [SYSTEM]/[LOCATION] tag at all: <p class="narrative"><em>-- You are
-  // now here --</em></p>. Used as the room-transition signal: whatever was
-  // in the roster belonged to the PREVIOUS room and is now stale, so it's
-  // cleared, and your own character (see MY_CHARACTER_NAME) is re-added
-  // fresh for the new room.
+  // CORRECTED per user: this narrative divider (no [SYSTEM]/[LOCATION] tag
+  // at all — <p class="narrative"><em>-- You are now here --</em></p>) only
+  // ever appears once, on initial login/connect — NOT on every room
+  // arrival as originally assumed. Kept only as the trigger for that first
+  // room; ordinary movement is YOU_MOVE_RE below.
   const NARRATIVE_SELECTOR = 'p.narrative';
   const YOU_ARE_NOW_HERE_RE = /^--\s*You are now here\s*--$/i;
+
+  // The real, ordinary per-move signal (confirmed): "You move down to
+  // Frankford & Girard Corner." — a normal SELF_RE-matching SYSTEM line, so
+  // it must be checked for before SELF_RE's generic "ignore all You...
+  // lines" short-circuit swallows it. Same room-transition handling as the
+  // login divider above: whatever was in the roster belonged to the room
+  // you just left.
+  const YOU_MOVE_RE = /^You move\b/i;
 
   // This script can never learn your own character's name from anything it
   // observes — self-referential lines always say "You" ("You look around",
@@ -234,6 +240,14 @@
 
   function clearRoster() {
     for (const entry of uniqueRosterEntries()) removeRosterEntry(entry);
+  }
+
+  // Called on any signal that you've moved to a different room (the
+  // login-only narrative divider, or an ordinary "You move ... to ..."
+  // line) — whatever was tracked belonged to the room you just left.
+  function handleRoomTransition() {
+    clearRoster();
+    if (MY_CHARACTER_NAME) upsertRoster(MY_CHARACTER_NAME, 'self');
   }
 
   // The periodic source of truth: replaces the roster's membership with
@@ -421,7 +435,10 @@
   function handleSystemArticle(article) {
     const text = getSystemText(article);
     if (text === null) return false;
-    if (SELF_RE.test(text)) return true;
+    if (SELF_RE.test(text)) {
+      if (YOU_MOVE_RE.test(text)) handleRoomTransition();
+      return true;
+    }
     if (NON_MOVEMENT_RE.test(text) || text.length > MAX_MOVEMENT_LEN) return true; // e.g. Daily News — leave alone
 
     const looksAt = LOOKS_AT_RE.exec(text);
@@ -450,14 +467,11 @@
     return p ? (p.textContent || '').trim() : null;
   }
 
-  // Returns true if this article was the narrative room-arrival divider.
+  // Returns true if this article was the login-only narrative divider.
   function handleNarrativeArticle(article) {
     const text = getNarrativeText(article);
     if (text === null) return false;
-    if (YOU_ARE_NOW_HERE_RE.test(text)) {
-      clearRoster();
-      if (MY_CHARACTER_NAME) upsertRoster(MY_CHARACTER_NAME, 'self');
-    }
+    if (YOU_ARE_NOW_HERE_RE.test(text)) handleRoomTransition();
     return true;
   }
 
