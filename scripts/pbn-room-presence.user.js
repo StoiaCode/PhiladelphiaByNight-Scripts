@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Room Presence
 // @namespace    stoia.red
-// @version      1.0.2
+// @version      1.1.0
 // @description  Tracks who's actually in the room (via enter/leave lines, resynced by /look) in a new "Present" tab, and draws momentary arrows for looks/whispers/mentions instead of leaving them as chat spam.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -44,6 +44,13 @@
   const DIRECTION_WORD = '(?:the\\s+)?(?:north|south|east|west|northeast|northwest|southeast|southwest|up|upward|down|downward|above|below|in|out)\\b';
   const ENTER_RE = new RegExp(`\\bfrom ${DIRECTION_WORD}`, 'iu');
   const LEAVE_RE = new RegExp(`\\b(?:to|towards) ${DIRECTION_WORD}`, 'iu');
+  // Also known, deliberately not chased yet (per explicit call — /look's
+  // periodic resync is the safety net for exactly this): some leave lines
+  // describe boarding a vehicle rather than moving in a direction at all,
+  // e.g. "Sparrow steps aboard the waiting train." — no "to"/"towards" +
+  // direction anywhere in it, so LEAVE_RE doesn't (and isn't meant to) catch
+  // it. Same graceful-drift handling as the "downward" gap above.
+
   // Duplicated verbatim from declutter — confirmed from real traffic to never
   // carry custom flavor text, unlike enter/leave. Identity-recovery only here
   // (see handleSystemArticle) — never itself an add/remove signal, since
@@ -71,6 +78,25 @@
   const NO_ONE_ELSE_RE = /^There is no one else of note here\.?$/i;
   const YOU_SEE_RE = /^You see:?$/i;
   const ROSTER_BULLET_RE = /^[•\-*]\s*/;
+
+  // Confirmed live (seen earlier this session): every room arrival — your
+  // own initial connect included — renders a plain narrative divider with
+  // no [SYSTEM]/[LOCATION] tag at all: <p class="narrative"><em>-- You are
+  // now here --</em></p>. Used as the room-transition signal: whatever was
+  // in the roster belonged to the PREVIOUS room and is now stale, so it's
+  // cleared, and your own character (see MY_CHARACTER_NAME) is re-added
+  // fresh for the new room.
+  const NARRATIVE_SELECTOR = 'p.narrative';
+  const YOU_ARE_NOW_HERE_RE = /^--\s*You are now here\s*--$/i;
+
+  // This script can never learn your own character's name from anything it
+  // observes — self-referential lines always say "You" ("You look around",
+  // "You are in <room>"), and you never appear in your own /look roster
+  // listing either. Set this to your character's exact display name (as
+  // other people would see it in an enter/leave line) to have yourself
+  // show up in the Present tab too. Leave blank to just never track
+  // yourself — everyone else still works normally either way.
+  const MY_CHARACTER_NAME = '';
 
   // How long a drawn arrow stays visible before fading out. Tune to taste.
   const ARROW_FADE_MS = 5000;
@@ -204,6 +230,10 @@
   function removeRosterEntry(entry) {
     entry.identityKeys.forEach(k => roster.delete(k));
     if (entry.rowEl) entry.rowEl.remove();
+  }
+
+  function clearRoster() {
+    for (const entry of uniqueRosterEntries()) removeRosterEntry(entry);
   }
 
   // The periodic source of truth: replaces the roster's membership with
@@ -415,6 +445,22 @@
     return true;
   }
 
+  function getNarrativeText(article) {
+    const p = article.querySelector(NARRATIVE_SELECTOR);
+    return p ? (p.textContent || '').trim() : null;
+  }
+
+  // Returns true if this article was the narrative room-arrival divider.
+  function handleNarrativeArticle(article) {
+    const text = getNarrativeText(article);
+    if (text === null) return false;
+    if (YOU_ARE_NOW_HERE_RE.test(text)) {
+      clearRoster();
+      if (MY_CHARACTER_NAME) upsertRoster(MY_CHARACTER_NAME, 'self');
+    }
+    return true;
+  }
+
   // Returns true if this article was look-output-tagged at all (a room
   // description article's own [LOCATION] tag does NOT match this — the
   // roster listing is a separate article, see LOOK_OUTPUT_SELECTOR above).
@@ -470,6 +516,7 @@
   // --------------------------------------------------------------------------
 
   function processArticle(article) {
+    if (handleNarrativeArticle(article)) return;
     if (handleLookOutputArticle(article)) return;
     if (handleSystemArticle(article)) return;
     handleDialogueArticle(article);
@@ -484,6 +531,12 @@
     const container = document.querySelector('.chat-container');
     if (!container) return false;
     if (!buildPresentTab()) return false;
+
+    // Seed immediately in case the room was already established (and its
+    // "-- You are now here --" divider already scrolled past) before this
+    // script mounted — the next real room transition still re-adds you
+    // fresh via handleNarrativeArticle regardless.
+    if (MY_CHARACTER_NAME) upsertRoster(MY_CHARACTER_NAME, 'self');
 
     new MutationObserver(mutations => {
       for (const m of mutations) {
