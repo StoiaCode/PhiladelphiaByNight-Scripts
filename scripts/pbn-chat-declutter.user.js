@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Chat Declutter
 // @namespace    stoia.red
-// @version      1.2.1
+// @version      1.3.0
 // @description  Mutes and collapses consecutive/related SYSTEM spam (walk in / look around / walk out) into compact per-actor blocks, and hides "entered torpor" for other players for a bit in case it's just a flaky reconnect.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -85,6 +85,14 @@
   // this; a multi-sentence news paragraph blows past it easily).
   const NON_MOVEMENT_RE = /^[-"[]/;
   const MAX_MOVEMENT_LEN = 200;
+  // Duplicated from pbn-room-presence.user.js (if installed) purely to
+  // recognize categories that script now owns outright — see the
+  // document.documentElement.dataset.pbnRoomPresenceActive check in
+  // handleArticle() below. Not otherwise used by declutter's own logic.
+  const ENTER_RE = /\bfrom the \p{L}+/iu;
+  const LEAVE_RE = /\b(?:to|towards) the \p{L}+/iu;
+  const LOOKS_AT_RE = /^(.+) looks at (.+)\.$/;
+  const WHISPER_RE = /^(.+) whispers to (.+)\.$/;
 
   // --------------------------------------------------------------------------
   // DOM helpers
@@ -380,6 +388,19 @@
     // structured announcement. Leave it completely alone: no dimming, no
     // grouping, no orphan buffering.
     if (NON_MOVEMENT_RE.test(text) || text.length > MAX_MOVEMENT_LEN) return;
+
+    // If pbn-room-presence.user.js is installed and mounted, it now owns
+    // enter/leave/looks-around/looks-at/whisper lines outright (hiding them
+    // and, where relevant, drawing an arrow instead) — defer to it entirely
+    // for these categories rather than also dimming/grouping them here.
+    // Everything else (torpor/awoken, non-movement passthrough, and
+    // grouping for movement lines Room Presence's heuristics don't
+    // recognize) is unaffected.
+    if (document.documentElement.dataset.pbnRoomPresenceActive === '1' &&
+        (ENTER_RE.test(text) || LEAVE_RE.test(text) || LOOKS_AROUND_RE.test(text) ||
+         LOOKS_AT_RE.test(text) || WHISPER_RE.test(text))) {
+      return;
+    }
 
     // The leading actor may have no usable name at all — some characters
     // display an anonymous/masked description instead of a proper name
