@@ -27,6 +27,7 @@ manager will open an install screen — review it and click **Install**.
 | Room Presence | [`pbn-room-presence.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-room-presence.user.js) |
 | Compass Tools | [`pbn-compass-tools.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-compass-tools.user.js) |
 | Craft Helper | [`pbn-craft-helper.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-craft-helper.user.js) |
+| Character Cards | [`pbn-character-cards.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-character-cards.user.js) |
 
 Each script declares `@updateURL`/`@downloadURL`, so your manager will pull
 updates automatically when this repo changes. After installing, reload any
@@ -249,6 +250,25 @@ Craft [▲]
 - **▲ / ▼** — collapses or expands the panel.
 
 The panel starts expanded and collapses to a single header line when you don't need it.
+
+---
+
+## PbN Character Cards
+
+Lets you reorder your character cards on the **My Characters** page and
+choose how many appear per row.
+
+- **Reordering** — every card gets ▲ / ▼ buttons next to its View/Make
+  Active/Delete actions; click to move it earlier or later in the grid.
+- **Cards per row** — a small +/- stepper appears above the grid to control
+  how many cards fit across a row.
+
+Both the order and the per-row count are remembered per browser and
+re-applied automatically the next time you open the page. If you create or
+delete a character, new cards join the end of your saved order and removed
+ones are quietly dropped from it — nothing to fix up by hand.
+
+This script has no configurable options.
 
 ---
 

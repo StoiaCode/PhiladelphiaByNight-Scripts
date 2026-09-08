@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Compass Tools
 // @namespace    stoia.red
-// @version      1.0.5
+// @version      1.1.0
 // @description  Shows destination room names on compass hover and adds Look/Search mode toggle.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -164,31 +164,62 @@
     });
   }
 
-  // Re-apply tooltips when compass cells update (room changes, exits change).
-  new MutationObserver(mutations => {
-    const toUpdate = new Set();
-    for (const m of mutations) {
-      if (m.type === 'attributes') {
-        // aria-label or class changed on a cell — re-tooltip its compass.
-        const compass = m.target.closest?.('.compass');
-        if (compass) toUpdate.add(compass);
-        continue;
-      }
-      for (const node of m.addedNodes) {
-        if (node.nodeType !== 1) continue;
-        if (node.classList?.contains('compass')) { mountAll(); return; }
-        if (node.querySelector?.('.compass'))    { mountAll(); return; }
-        if (node.classList?.contains('compass__cell')) {
-          const compass = node.closest('.compass');
+  // Violentmonkey only evaluates @match on a real page load; this site's Vue
+  // Router changes the URL via pushState without reloading the document, so
+  // without this the observer below would keep running on every page of the
+  // site instead of just /play.
+  function watchRoute(isActive, enter, exit) {
+    let active = null;
+    function check() {
+      const on = !!isActive();
+      if (on === active) return;
+      active = on;
+      (on ? enter : exit)();
+    }
+    check();
+    window.addEventListener('popstate', check);
+    setInterval(check, 500);
+  }
+
+  let bodyObserver = null;
+
+  function enter() {
+    if (bodyObserver) return;
+    // Re-apply tooltips when compass cells update (room changes, exits change).
+    bodyObserver = new MutationObserver(mutations => {
+      const toUpdate = new Set();
+      for (const m of mutations) {
+        if (m.type === 'attributes') {
+          // aria-label or class changed on a cell — re-tooltip its compass.
+          const compass = m.target.closest?.('.compass');
           if (compass) toUpdate.add(compass);
+          continue;
+        }
+        for (const node of m.addedNodes) {
+          if (node.nodeType !== 1) continue;
+          if (node.classList?.contains('compass')) { mountAll(); return; }
+          if (node.querySelector?.('.compass'))    { mountAll(); return; }
+          if (node.classList?.contains('compass__cell')) {
+            const compass = node.closest('.compass');
+            if (compass) toUpdate.add(compass);
+          }
         }
       }
-    }
-    toUpdate.forEach(applyTooltips);
-  }).observe(document.body, {
-    childList: true, subtree: true,
-    attributes: true, attributeFilter: ['class', 'aria-label'],
-  });
+      toUpdate.forEach(applyTooltips);
+    });
+    bodyObserver.observe(document.body, {
+      childList: true, subtree: true,
+      attributes: true, attributeFilter: ['class', 'aria-label'],
+    });
+    mountAll();
+  }
 
-  mountAll();
+  function exit() {
+    if (bodyObserver) { bodyObserver.disconnect(); bodyObserver = null; }
+    // No manual DOM cleanup needed: #pbn-compass-toggle and wired .compass
+    // elements live inside the /play subtree Vue destroys on its own;
+    // `wired` is a WeakSet, so entries are collected automatically.
+  }
+
+  watchRoute(() => location.pathname === '/play', enter, exit);
 })();

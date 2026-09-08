@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Layout Lock
 // @namespace    stoia.red
-// @version      1.2.0
+// @version      1.3.0
 // @description  Locks the play page to viewport height — the chat box shrinks to fit, no page-level scrollbar.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -91,5 +91,29 @@
       min-height: 0 !important;
     }
   `;
+  style.disabled = true;
   document.head.appendChild(style);
+
+  // Violentmonkey only evaluates @match on a real page load; this site's Vue
+  // Router changes the URL via pushState without reloading the document, so
+  // without this the clamp above would keep applying on every other page
+  // the user navigates to within the SPA session.
+  function watchRoute(isActive, enter, exit) {
+    let active = null;
+    function check() {
+      const on = !!isActive();
+      if (on === active) return;
+      active = on;
+      (on ? enter : exit)();
+    }
+    check();
+    window.addEventListener('popstate', check);
+    setInterval(check, 500);
+  }
+
+  watchRoute(
+    () => location.pathname === '/play',
+    () => { style.disabled = false; },
+    () => { style.disabled = true; }
+  );
 })();

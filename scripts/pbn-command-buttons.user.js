@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Command Buttons
 // @namespace    stoia.red
-// @version      1.2.1
+// @version      1.3.0
 // @description  Adds quick-command buttons (/ooc /say /emote /pose ...) above the MUSH input box. Buttons are editable in-page via the userscript menu (no script editing needed).
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -447,9 +447,35 @@
     GM_registerMenuCommand('Edit command buttons', openEditor);
   }
 
-  // SPA: the input mounts/unmounts on navigation, so keep checking.
-  const observer = new MutationObserver(() => mount());
-  observer.observe(document.body, { childList: true, subtree: true });
+  // Violentmonkey only evaluates @match on a real page load; this site's Vue
+  // Router changes the URL via pushState without reloading the document, so
+  // without this the observer below would keep scanning the whole document
+  // for a text input (and could inject the bar next to the wrong one) on
+  // every other page the user navigates to within the SPA session.
+  function watchRoute(isActive, enter, exit) {
+    let active = null;
+    function check() {
+      const on = !!isActive();
+      if (on === active) return;
+      active = on;
+      (on ? enter : exit)();
+    }
+    check();
+    window.addEventListener('popstate', check);
+    setInterval(check, 500);
+  }
 
-  mount();
+  let observer = null;
+  function enter() {
+    if (observer) return;
+    // SPA: the input mounts/unmounts on navigation, so keep checking.
+    observer = new MutationObserver(() => mount());
+    observer.observe(document.body, { childList: true, subtree: true });
+    mount();
+  }
+  function exit() {
+    if (observer) { observer.disconnect(); observer = null; }
+    removeBar();
+  }
+  watchRoute(() => location.pathname === '/play', enter, exit);
 })();

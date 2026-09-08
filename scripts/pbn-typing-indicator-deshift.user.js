@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Typing Indicator De-Shift
 // @namespace    stoia.red
-// @version      1.5.0
+// @version      1.6.0
 // @description  Stops the "X is typing" indicator from nudging the command input. Floats it above the box instead.
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -23,10 +23,34 @@
   const TYPING_SELECTOR = '.typing-indicator';
   const INPUT_SELECTOR  = 'textarea.q-field__native';
 
+  // Violentmonkey only evaluates @match on a real page load; this site's Vue
+  // Router changes the URL via pushState without reloading the document, so
+  // without this the code below would keep polling/observing every page of
+  // the site instead of just /play (harmless in effect since the selectors
+  // above only exist on /play, but wasteful).
+  function watchRoute(isActive, enter, exit) {
+    let active = null;
+    function check() {
+      const on = !!isActive();
+      if (on === active) return;
+      active = on;
+      (on ? enter : exit)();
+    }
+    check();
+    window.addEventListener('popstate', check);
+    setInterval(check, 500);
+  }
+
   if (HIDE_ENTIRELY) {
     const s = document.createElement('style');
     s.textContent = `${TYPING_SELECTOR}{display:none !important;}`;
+    s.disabled = true;
     document.head.appendChild(s);
+    watchRoute(
+      () => location.pathname === '/play',
+      () => { s.disabled = false; },
+      () => { s.disabled = true; }
+    );
     return;
   }
 
@@ -74,8 +98,20 @@
   // The element is created/destroyed dynamically, so watch for it and
   // reposition on anything that can move the input.
   const observer = new MutationObserver(reposition);
-  observer.observe(document.body, { childList: true, subtree: true, characterData: true });
-  window.addEventListener('scroll', reposition, true);
-  window.addEventListener('resize', reposition);
-  setInterval(reposition, 250); // safety net for missed layout changes
+  let intervalId = null;
+
+  function enter() {
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    window.addEventListener('scroll', reposition, true);
+    window.addEventListener('resize', reposition);
+    intervalId = setInterval(reposition, 250); // safety net for missed layout changes
+    reposition();
+  }
+  function exit() {
+    observer.disconnect();
+    window.removeEventListener('scroll', reposition, true);
+    window.removeEventListener('resize', reposition);
+    if (intervalId) { clearInterval(intervalId); intervalId = null; }
+  }
+  watchRoute(() => location.pathname === '/play', enter, exit);
 })();

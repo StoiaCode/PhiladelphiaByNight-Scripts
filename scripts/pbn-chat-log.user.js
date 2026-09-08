@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Chat Log
 // @namespace    stoia.red
-// @version      1.0.0
+// @version      1.0.1
 // @description  Captures chat messages to memory as they arrive and saves the session as a plain-text file on demand.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -80,6 +80,9 @@
     tabBar.appendChild(btn);
   }
 
+  let chatObserver = null;
+  let waiter = null;
+
   function mount() {
     const container = document.querySelector(CHAT_SELECTOR);
     const tabBar    = document.querySelector('.chat-tab-bar');
@@ -90,7 +93,7 @@
     container.querySelectorAll(ARTICLE_SELECTOR).forEach(el => capture(el, sessionStart));
 
     // Watch for new messages and timestamp them on arrival.
-    new MutationObserver(mutations => {
+    chatObserver = new MutationObserver(mutations => {
       for (const m of mutations) {
         for (const node of m.addedNodes) {
           if (node.nodeType !== 1) continue;
@@ -98,15 +101,44 @@
           else node.querySelectorAll(ARTICLE_SELECTOR).forEach(el => capture(el));
         }
       }
-    }).observe(container, { childList: true, subtree: true });
+    });
+    chatObserver.observe(container, { childList: true, subtree: true });
 
     addButton(tabBar);
     return true;
   }
 
-  // SPA: the chat container may not exist yet at document-idle.
-  if (!mount()) {
-    const waiter = new MutationObserver(() => { if (mount()) waiter.disconnect(); });
+  // Violentmonkey only evaluates @match on a real page load; this site's Vue
+  // Router changes the URL via pushState without reloading the document, so
+  // without this the chat observer above would keep a handle on a detached
+  // .chat-container for the rest of the tab's life once the user navigates
+  // away from /play. `entries`/`seen` are deliberately left alone on exit —
+  // the log is meant to capture the whole tab session, not just time spent
+  // on /play — so returning to /play backfills only genuinely new messages.
+  function watchRoute(isActive, enter, exit) {
+    let active = null;
+    function check() {
+      const on = !!isActive();
+      if (on === active) return;
+      active = on;
+      (on ? enter : exit)();
+    }
+    check();
+    window.addEventListener('popstate', check);
+    setInterval(check, 500);
+  }
+
+  function enter() {
+    if (mount()) return;
+    // SPA: the chat container may not exist yet the moment we enter /play.
+    waiter = new MutationObserver(() => { if (mount()) { waiter.disconnect(); waiter = null; } });
     waiter.observe(document.body, { childList: true, subtree: true });
   }
+
+  function exit() {
+    if (waiter) { waiter.disconnect(); waiter = null; }
+    if (chatObserver) { chatObserver.disconnect(); chatObserver = null; }
+  }
+
+  watchRoute(() => location.pathname === '/play', enter, exit);
 })();
