@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Character Cards
 // @namespace    stoia.red
-// @version      1.0.0
+// @version      1.0.1
 // @description  Reorder your character cards and choose how many appear per row on the My Characters page.
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -92,25 +92,41 @@
   }
 
   // --------------------------------------------------------------------------
-  // Column count — a hybrid CSS rule covers both possible layout modes for
-  // .mc-grid (unknown without the site's stylesheet): grid-template-columns
-  // takes effect if it's CSS Grid, the flex/max-width rule if it's Flexbox.
-  // Exactly one half is ever live; the other is inert.
+  // Column count. .mc-grid's real layout mode (Grid vs Flexbox) isn't known
+  // without the site's stylesheet, so it's detected at runtime and only the
+  // matching rule is injected — NOT both. A percentage max-width/flex-basis
+  // applies to any box regardless of display type, so if .mc-grid actually
+  // uses CSS Grid, a max-width rule sitting alongside grid-template-columns
+  // would resolve against the item's own (already 1/N-sized) grid-area
+  // width, squeezing every card to roughly 1/N² of the row instead of 1/N.
   // --------------------------------------------------------------------------
 
+  const GAP_VAR = '--pbn-cc-gap';
   const style = document.createElement('style');
-  style.textContent = `
-    .mc-grid {
-      grid-template-columns: repeat(var(${COLS_VAR}, ${DEFAULT_COLS}), 1fr) !important;
-    }
-    .mc-grid > .mc-card {
-      flex: 1 1 calc(100% / var(${COLS_VAR}, ${DEFAULT_COLS})) !important;
-      max-width: calc(100% / var(${COLS_VAR}, ${DEFAULT_COLS})) !important;
-      box-sizing: border-box !important;
-    }
-  `;
   style.disabled = true;
   document.head.appendChild(style);
+
+  function applyColumnCSS(grid) {
+    const isFlex = getComputedStyle(grid).display.includes('flex');
+    if (isFlex) {
+      const cs = getComputedStyle(grid);
+      const gapPx = parseFloat(cs.columnGap || cs.gap) || 0;
+      document.documentElement.style.setProperty(GAP_VAR, `${gapPx}px`);
+      style.textContent = `
+        .mc-grid > .mc-card {
+          flex: 1 1 calc((100% - (var(${COLS_VAR}, ${DEFAULT_COLS}) - 1) * var(${GAP_VAR}, 0px)) / var(${COLS_VAR}, ${DEFAULT_COLS})) !important;
+          max-width: calc((100% - (var(${COLS_VAR}, ${DEFAULT_COLS}) - 1) * var(${GAP_VAR}, 0px)) / var(${COLS_VAR}, ${DEFAULT_COLS})) !important;
+          box-sizing: border-box !important;
+        }
+      `;
+    } else {
+      style.textContent = `
+        .mc-grid {
+          grid-template-columns: repeat(var(${COLS_VAR}, ${DEFAULT_COLS}), 1fr) !important;
+        }
+      `;
+    }
+  }
 
   function setCols(n) {
     document.documentElement.style.setProperty(COLS_VAR, String(n));
@@ -207,6 +223,7 @@
 
     const state = loadState();
     applyOrderAndPrune(grid, state);
+    applyColumnCSS(grid);
     setCols(state.cols);
     style.disabled = false;
 
