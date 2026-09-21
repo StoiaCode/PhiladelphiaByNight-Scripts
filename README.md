@@ -23,6 +23,7 @@ manager will open an install screen — review it and click **Install**.
 | Typing Indicator De-Shift | [`pbn-typing-indicator-deshift.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-typing-indicator-deshift.user.js) |
 | Layout Lock | [`pbn-layout-lock.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-layout-lock.user.js) |
 | Chat Log | [`pbn-chat-log.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-chat-log.user.js) |
+| Chat Timestamps | [`pbn-chat-timestamps.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-chat-timestamps.user.js) |
 | Chat Declutter | [`pbn-chat-declutter.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-chat-declutter.user.js) |
 | Room Presence | [`pbn-room-presence.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-room-presence.user.js) |
 | Compass Tools | [`pbn-compass-tools.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-compass-tools.user.js) |
@@ -147,6 +148,18 @@ This script has no configurable options.
 Adds a **Save Log** button to the chat tab bar. Messages are captured to memory as they arrive (timestamped at the moment they appear), and clicking the button downloads the full session as a plain `.txt` file named `pbn-log-YYYY-MM-DD-HHMMSS.txt`.
 
 Nothing is written to browser storage — the log lives in memory only and is gone when the tab closes. Messages already on screen when the script loads are backfilled with the session-start timestamp.
+
+This script has no configurable options.
+
+---
+
+## PbN Chat Timestamps
+
+Shows an `HH:MM` timestamp in front of every chat message, styled to blend in with the chat's own font rather than looking like an add-on.
+
+Messages already on screen when the script loads are stamped with the time you loaded the page (their real arrival time isn't known), same trade-off [PbN Chat Log](#pbn-chat-log) makes for its own backfill.
+
+The timestamp is rendered as generated content, not real text, so it never shows up duplicated inside a [PbN Chat Log](#pbn-chat-log) export — the exported file's own `[YYYY-MM-DD HH:MM:SS]` prefix is unaffected either way.
 
 This script has no configurable options.
 
