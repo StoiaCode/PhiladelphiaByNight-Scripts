@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Chat Timestamps
 // @namespace    stoia.red
-// @version      1.0.0
+// @version      1.0.1
 // @description  Shows an HH:MM timestamp in front of every chat message, in the chat's own font.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
@@ -15,6 +15,14 @@
 
   const CHAT_SELECTOR    = '.chat-container';
   const ARTICLE_SELECTOR = '[role="article"]';
+  // Every message's actual visible text lives in a single <p> directly
+  // inside its [role="article"] row (confirmed live: system lines, look
+  // output, the "Currently connected" listing all follow this shape) — the
+  // article div itself is a flex/block row wrapper, not inline content, so
+  // a ::before on the row renders as its own stacked line above the message
+  // instead of sitting in front of the text. Targeting the inner <p>
+  // (a normal inline formatting context) puts it right before the text.
+  const MESSAGE_SELECTOR = ':scope > p';
   const TS_ATTR          = 'data-pbn-ts';
 
   // Rendered as a ::before pseudo-element rather than a real inserted node.
@@ -24,7 +32,7 @@
   // never end up duplicated inside pbn-chat-log's exported session file.
   const style = document.createElement('style');
   style.textContent = `
-    ${CHAT_SELECTOR} ${ARTICLE_SELECTOR}[${TS_ATTR}]::before {
+    ${CHAT_SELECTOR} ${ARTICLE_SELECTOR} > p[${TS_ATTR}]::before {
       content: "[" attr(${TS_ATTR}) "] ";
       opacity: 0.55;
     }
@@ -35,9 +43,10 @@
   function pad(n) { return String(n).padStart(2, '0'); }
   function fmtTime(d) { return `${pad(d.getHours())}:${pad(d.getMinutes())}`; }
 
-  function stamp(el, ts) {
-    if (el.hasAttribute(TS_ATTR)) return;
-    el.setAttribute(TS_ATTR, fmtTime(ts || new Date()));
+  function stamp(article, ts) {
+    const p = article.querySelector(MESSAGE_SELECTOR);
+    if (!p || p.hasAttribute(TS_ATTR)) return;
+    p.setAttribute(TS_ATTR, fmtTime(ts || new Date()));
   }
 
   let chatObserver = null;
