@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         PbN Chat Timestamps
 // @namespace    stoia.red
-// @version      1.0.1
+// @version      1.0.2
 // @description  Shows an HH:MM timestamp in front of every chat message, in the chat's own font.
-// @match        https://philadelphiabynight.net/play
+// @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
 // @grant        none
 // @downloadURL  https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-chat-timestamps.user.js

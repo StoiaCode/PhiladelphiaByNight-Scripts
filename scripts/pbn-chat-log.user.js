@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         PbN Chat Log
 // @namespace    stoia.red
-// @version      1.0.1
+// @version      1.0.2
 // @description  Captures chat messages to memory as they arrive and saves the session as a plain-text file on demand.
-// @match        https://philadelphiabynight.net/play
+// @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
 // @grant        none
 // @downloadURL  https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-chat-log.user.js

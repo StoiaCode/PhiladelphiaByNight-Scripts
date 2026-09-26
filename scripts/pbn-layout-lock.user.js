@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         PbN Layout Lock
 // @namespace    stoia.red
-// @version      1.3.0
+// @version      1.3.1
 // @description  Locks the play page to viewport height — the chat box shrinks to fit, no page-level scrollbar.
-// @match        https://philadelphiabynight.net/play
+// @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
 // @grant        none
 // @downloadURL  https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-layout-lock.user.js

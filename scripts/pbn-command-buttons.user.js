@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         PbN Command Buttons
 // @namespace    stoia.red
-// @version      1.3.0
+// @version      1.3.1
 // @description  Adds quick-command buttons (/ooc /say /emote /pose ...) above the MUSH input box. Buttons are editable in-page via the userscript menu (no script editing needed).
-// @match        https://philadelphiabynight.net/play
+// @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
 // @grant        GM_getValue
 // @grant        GM_setValue
