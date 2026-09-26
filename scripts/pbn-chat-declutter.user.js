@@ -1,14 +1,18 @@
 // ==UserScript==
 // @name         PbN Chat Declutter
 // @namespace    stoia.red
-// @version      1.3.4
-// @description  Mutes and collapses consecutive/related SYSTEM spam (walk in / look around / walk out) into compact per-actor blocks, and hides "entered torpor" for other players for a bit in case it's just a flaky reconnect.
+// @version      1.3.5
+// @description  [Deprecated — no longer used/maintained] Mutes and collapses consecutive/related SYSTEM spam (walk in / look around / walk out) into compact per-actor blocks, and hides "entered torpor" for other players for a bit in case it's just a flaky reconnect.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
 // @grant        none
 // @downloadURL  https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-chat-declutter.user.js
 // @updateURL    https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-chat-declutter.user.js
 // ==/UserScript==
+
+// DEPRECATED: no longer used or maintained. Kept for reference only — it
+// still works as of its last update, but hasn't been touched since it fell
+// out of use, so don't expect fixes here.
 
 (function () {
   'use strict';

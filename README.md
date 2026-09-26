@@ -24,10 +24,10 @@ manager will open an install screen — review it and click **Install**.
 | Layout Lock | [`pbn-layout-lock.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-layout-lock.user.js) |
 | Chat Log | [`pbn-chat-log.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-chat-log.user.js) |
 | Chat Timestamps | [`pbn-chat-timestamps.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-chat-timestamps.user.js) |
-| Chat Declutter | [`pbn-chat-declutter.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-chat-declutter.user.js) |
-| Room Presence | [`pbn-room-presence.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-room-presence.user.js) |
+| Chat Declutter *(deprecated)* | [`pbn-chat-declutter.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-chat-declutter.user.js) |
+| Room Presence *(deprecated)* | [`pbn-room-presence.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-room-presence.user.js) |
 | Compass Tools | [`pbn-compass-tools.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-compass-tools.user.js) |
-| Craft Helper | [`pbn-craft-helper.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-craft-helper.user.js) |
+| Craft Helper *(deprecated)* | [`pbn-craft-helper.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-craft-helper.user.js) |
 | Character Cards | [`pbn-character-cards.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-character-cards.user.js) |
 
 Each script declares `@updateURL`/`@downloadURL`, so your manager will pull
@@ -165,7 +165,9 @@ This script has no configurable options.
 
 ---
 
-## PbN Chat Declutter
+## PbN Chat Declutter *(deprecated)*
+
+**No longer used or maintained.** Kept here for reference only — it still works as of its last update, but don't expect fixes.
 
 Cuts down on `[SYSTEM]` spam without dropping any information.
 
@@ -190,7 +192,9 @@ The exact wording the server uses for "entered torpor" and "has awoken" messages
 
 ---
 
-## PbN Room Presence
+## PbN Room Presence *(deprecated)*
+
+**No longer used or maintained.** Kept here for reference only — it still works as of its last update, but don't expect fixes.
 
 Instead of trying to make `[SYSTEM]` movement spam *look* clean in the chat (Chat Declutter's approach), this tracks who's actually in the room as real state, so the spam can be removed from the chat entirely.
 
@@ -242,7 +246,9 @@ This script has no configurable options.
 
 ---
 
-## PbN Craft Helper
+## PbN Craft Helper *(deprecated)*
+
+**No longer used or maintained.** Kept here for reference only — it still works as of its last update, but don't expect fixes.
 
 Adds a small panel above the command input to handle the multi-step crafting workflow without typing.
 

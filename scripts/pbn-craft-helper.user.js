@@ -1,14 +1,18 @@
 // ==UserScript==
 // @name         PbN Craft Helper
 // @namespace    stoia.red
-// @version      1.0.1
-// @description  Quick-action panel for the crafting system — recipe memory, one-click commands, attempt counter.
+// @version      1.0.2
+// @description  [Deprecated — no longer used/maintained] Quick-action panel for the crafting system — recipe memory, one-click commands, attempt counter.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
 // @grant        none
 // @downloadURL  https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-craft-helper.user.js
 // @updateURL    https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-craft-helper.user.js
 // ==/UserScript==
+
+// DEPRECATED: no longer used or maintained. Kept for reference only — it
+// still works as of its last update, but hasn't been touched since the
+// crafting system stopped being used, so don't expect fixes here.
 
 (function () {
   'use strict';

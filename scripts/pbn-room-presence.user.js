@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PbN Room Presence
 // @namespace    stoia.red
-// @version      1.7.0
-// @description  Tracks who's actually in the room (via enter/leave lines, resynced by /look) in a new "Present" tab, flashes and highlights new arrivals, flags unidentified entrants for a /look check, and draws momentary arrows for looks/whispers/mentions instead of leaving them as chat spam.
+// @version      1.7.1
+// @description  [Deprecated — no longer used/maintained] Tracks who's actually in the room (via enter/leave lines, resynced by /look) in a new "Present" tab, flashes and highlights new arrivals, flags unidentified entrants for a /look check, and draws momentary arrows for looks/whispers/mentions instead of leaving them as chat spam.
 // @match        https://philadelphiabynight.net/play
 // @run-at       document-idle
 // @grant        GM_getValue
@@ -11,6 +11,10 @@
 // @downloadURL  https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-room-presence.user.js
 // @updateURL    https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-room-presence.user.js
 // ==/UserScript==
+
+// DEPRECATED: no longer used or maintained. Kept for reference only — it
+// still works as of its last update, but hasn't been touched since it fell
+// out of use, so don't expect fixes here.
 
 (function () {
   'use strict';
