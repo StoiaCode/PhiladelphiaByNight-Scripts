@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Command Buttons
 // @namespace    stoia.red
-// @version      1.3.2
+// @version      1.3.3
 // @description  Adds quick-command buttons (/ooc /say /emote /pose ...) above the MUSH input box. Buttons are editable in-page via the userscript menu (no script editing needed).
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -198,12 +198,15 @@
 
   const style = document.createElement('style');
   style.textContent = `
-    #${BAR_ID} { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 4px; align-items: center; }
+    #${BAR_ID} { display: flex; flex-wrap: wrap; gap: 5px; padding: 6px 4px; align-items: center; }
+    /* Georgia (the site's card font) instead of the tab-toggle's Courier:
+       proportional, so a dozen+ buttons fit in far less width, and easier
+       to read at a glance. */
     .pbn-cmd-btn {
-      flex: 0 0 auto; cursor: pointer; padding: 6px 14px;
-      background: #120a0a; border: 1px solid #9e2b2b80; border-radius: 6px;
-      font-family: 'Courier New', monospace; font-size: .9rem; letter-spacing: .04em;
-      color: #b0a489; transition: background .12s, color .12s;
+      flex: 0 0 auto; cursor: pointer; padding: 4px 10px;
+      background: #120a0a; border: 1px solid #9e2b2b80; border-radius: 5px;
+      font-family: Georgia, 'Times New Roman', serif; font-size: .95rem; line-height: 1.3;
+      color: #c4b49a; transition: background .12s, color .12s;
     }
     .pbn-cmd-btn:hover { color: #e8dcc0; background: #5a121233; }
     .pbn-cmd-btn:focus-visible { outline: 2px solid #e0b84a; outline-offset: -2px; }
@@ -213,9 +216,9 @@
     .pbn-cmd-btn--primary:hover { color: #fff; background: #b33434; }
     .pbn-cmd-expand { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; }
     .pbn-cmd-field {
-      width: 200px; padding: 5px 8px;
-      background: #0d0707; border: 1px solid #9e2b2b80; border-radius: 6px;
-      font-family: 'Courier New', monospace; font-size: .9rem; color: #e8dcc0;
+      width: 200px; padding: 4px 8px;
+      background: #0d0707; border: 1px solid #9e2b2b80; border-radius: 5px;
+      font-family: Georgia, 'Times New Roman', serif; font-size: .95rem; line-height: 1.3; color: #e8dcc0;
     }
     .pbn-cmd-field:focus { outline: none; border-color: #e0b84a; }
 
