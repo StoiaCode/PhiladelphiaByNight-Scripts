@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Chat Log
 // @namespace    stoia.red
-// @version      1.1.0
+// @version      1.1.1
 // @description  Records the RP chat as it arrives and saves the session as a plain-text file on demand.
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -272,6 +272,16 @@
       }
     }
     if (!hooked && Date.now() - enteredAt > FALLBACK_AFTER_MS) startDomFallback();
+
+    // Hover text says which path is live, so a broken hook is easy to spot.
+    const btn = document.getElementById(BTN_ID);
+    if (btn) {
+      const how = hooked ? 'recording from the game\'s RP message list'
+        : observedContainer ? 'FALLBACK: recording from the chat on screen'
+        : 'starting…';
+      const title = `Download this session's chat as a text file (${entries.length} messages, ${how})`;
+      if (btn.title !== title) btn.title = title;
+    }
   }
 
   function enter() {
