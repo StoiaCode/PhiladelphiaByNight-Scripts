@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PbN Character Cards
 // @namespace    stoia.red
-// @version      1.0.1
-// @description  Reorder your character cards and choose how many appear per row on the My Characters page.
+// @version      1.1.0
+// @description  Reorder your character cards, choose how many appear per row, and tidy recast/leave/delete into an Options menu on the My Characters page.
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
 // @grant        none
@@ -164,6 +164,164 @@
     actions.appendChild(down);
   }
 
+  // --------------------------------------------------------------------------
+  // Options menu. The site's "Request a recast" / "Take Leave" buttons sit in
+  // their own unaligned rows above the actions row, and Delete sits right next
+  // to the everyday buttons. All three are folded into one "Options" dropdown
+  // that takes Delete's slot. The original buttons are hidden, not moved or
+  // removed — Vue owns them — and each menu item just .click()s its original,
+  // so the site's own handlers (and confirm dialogs) run unchanged. Items are
+  // rebuilt from the live DOM on every open, so a recast/leave button that
+  // appears or disappears later is picked up automatically.
+  // --------------------------------------------------------------------------
+
+  const uiStyle = document.createElement('style');
+  uiStyle.disabled = true;
+  uiStyle.textContent = `
+    .mc-card__respec button,
+    .mc-card__leave button,
+    .mc-grid .mc-card__action--delete { display: none !important; }
+    /* Collapse the rows entirely unless they hold something besides buttons
+       (e.g. a leave-status note), so no empty gap is left behind. */
+    .mc-card__respec:not(:has(> :not(button))),
+    .mc-card__leave:not(:has(> :not(button))) { display: none !important; }
+  `;
+  document.head.appendChild(uiStyle);
+
+  let openMenu = null;
+
+  function closeMenu() {
+    if (!openMenu) return;
+    openMenu.menu.remove();
+    openMenu.trigger.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('mousedown', onOutside, true);
+    document.removeEventListener('keydown', onMenuKey, true);
+    window.removeEventListener('scroll', closeMenu, true);
+    window.removeEventListener('resize', closeMenu);
+    openMenu = null;
+  }
+
+  function onOutside(e) {
+    if (openMenu && !openMenu.menu.contains(e.target) && !openMenu.trigger.contains(e.target)) closeMenu();
+  }
+
+  function onMenuKey(e) {
+    if (e.key === 'Escape') { const t = openMenu?.trigger; closeMenu(); t?.focus(); }
+  }
+
+  function menuEntries(article) {
+    const entries = [];
+    article.querySelectorAll('.mc-card__respec button, .mc-card__leave button').forEach(b => {
+      entries.push({ orig: b, label: b.textContent.trim(), danger: false });
+    });
+    const del = article.querySelector('.mc-card__action--delete');
+    if (del) entries.push({ orig: del, label: del.textContent.trim() || 'Delete', danger: true });
+    return entries;
+  }
+
+  // First non-transparent background walking up from el, so the menu panel
+  // matches whatever the card is drawn on.
+  function solidBackground(el) {
+    for (let n = el; n && n !== document.documentElement; n = n.parentElement) {
+      const bg = getComputedStyle(n).backgroundColor;
+      if (bg && bg !== 'transparent' && !/rgba\(.*,\s*0\)$/.test(bg)) return bg;
+    }
+    return '#1a1a1a';
+  }
+
+  function showMenu(article, trigger) {
+    const entries = menuEntries(article);
+    if (!entries.length) return;
+
+    const ref = getComputedStyle(trigger);
+    const card = getComputedStyle(article);
+    const fontSize = Math.max(parseFloat(ref.fontSize) || 0, 15);
+    const border = card.borderTopWidth !== '0px' && card.borderTopStyle !== 'none'
+      ? card.borderTopColor : 'rgba(255,255,255,0.18)';
+    const dangerColor = getComputedStyle(article.querySelector('.mc-card__action--delete') || trigger).color;
+
+    const menu = document.createElement('div');
+    menu.className = 'pbn-cc-menu';
+    menu.setAttribute('role', 'menu');
+    menu.style.cssText = [
+      'position:fixed', 'z-index:9000', 'display:flex', 'flex-direction:column',
+      'padding:4px 0', `min-width:${Math.max(trigger.offsetWidth, 180)}px`,
+      `background:${solidBackground(article)}`, `border:1px solid ${border}`,
+      `border-radius:${card.borderTopLeftRadius || '6px'}`,
+      'box-shadow:0 8px 24px rgba(0,0,0,0.55)',
+    ].join(';');
+
+    entries.forEach(({ orig, label, danger }) => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.setAttribute('role', 'menuitem');
+      item.textContent = label;
+      item.disabled = orig.disabled;
+      if (orig.title) item.title = orig.title;
+      item.style.cssText = [
+        'display:block', 'width:100%', 'text-align:left', 'white-space:nowrap',
+        'padding:9px 16px', 'border:0', 'background:transparent',
+        `font-family:${ref.fontFamily}`, `font-size:${fontSize}px`,
+        `letter-spacing:${ref.letterSpacing}`, `text-transform:${ref.textTransform}`,
+        `color:${danger ? dangerColor : ref.color}`,
+        `cursor:${orig.disabled ? 'default' : 'pointer'}`,
+        `opacity:${orig.disabled ? '0.4' : '1'}`,
+      ].join(';');
+      if (danger) item.style.borderTop = `1px solid ${border}`;
+      item.addEventListener('mouseenter', () => { if (!item.disabled) item.style.background = 'rgba(255,255,255,0.08)'; });
+      item.addEventListener('mouseleave', () => { item.style.background = 'transparent'; });
+      item.addEventListener('click', () => { closeMenu(); orig.click(); });
+      menu.appendChild(item);
+    });
+
+    document.body.appendChild(menu);
+
+    // Right-align under the trigger; flip above it if there's no room below.
+    const r = trigger.getBoundingClientRect();
+    const mw = menu.offsetWidth, mh = menu.offsetHeight;
+    const left = Math.min(Math.max(8, r.right - mw), window.innerWidth - mw - 8);
+    const top = r.bottom + 4 + mh <= window.innerHeight ? r.bottom + 4 : Math.max(8, r.top - 4 - mh);
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+
+    trigger.setAttribute('aria-expanded', 'true');
+    openMenu = { menu, trigger };
+    document.addEventListener('mousedown', onOutside, true);
+    document.addEventListener('keydown', onMenuKey, true);
+    window.addEventListener('scroll', closeMenu, true);
+    window.addEventListener('resize', closeMenu);
+    menu.querySelector('button:not(:disabled)')?.focus();
+  }
+
+  function wireOptions(article) {
+    const actions = article.querySelector('.mc-card__actions');
+    if (!actions || actions.querySelector('.pbn-cc-options')) return;
+    if (!menuEntries(article).length) return;
+
+    const opts = document.createElement('button');
+    opts.type = 'button';
+    opts.className = 'mc-card__action mc-card__action--options pbn-cc-options';
+    opts.textContent = 'Options ▾';
+    opts.setAttribute('aria-haspopup', 'menu');
+    opts.setAttribute('aria-expanded', 'false');
+    opts.setAttribute('aria-label', 'More options');
+    // Vue's scoped CSS only matches elements carrying the component's
+    // data-v-* attribute, so copy it over to inherit the real button styling.
+    const sibling = actions.querySelector('.mc-card__action');
+    if (sibling) {
+      for (const a of sibling.attributes) if (a.name.startsWith('data-v-')) opts.setAttribute(a.name, '');
+    }
+    opts.addEventListener('click', () => {
+      const wasOpen = openMenu?.trigger === opts;
+      closeMenu();
+      if (!wasOpen) showMenu(article, opts);
+    });
+
+    const del = actions.querySelector('.mc-card__action--delete');
+    if (del) del.after(opts);
+    else actions.appendChild(opts);
+  }
+
   function refreshButtons(grid, state) {
     const cards = currentOrderedCards(grid);
     cards.forEach((c, i) => {
@@ -226,10 +384,12 @@
     applyColumnCSS(grid);
     setCols(state.cols);
     style.disabled = false;
+    uiStyle.disabled = false;
 
     buildStepperBar(grid, state);
     grid.querySelectorAll(':scope > .mc-card').forEach(c => {
       if (!wired.has(c)) { wired.add(c); wireCard(grid, state, c); }
+      wireOptions(c);
     });
     refreshButtons(grid, state);
 
@@ -240,6 +400,7 @@
       applyOrderAndPrune(grid, s);
       grid.querySelectorAll(':scope > .mc-card').forEach(c => {
         if (!wired.has(c)) { wired.add(c); wireCard(grid, s, c); }
+        wireOptions(c);
       });
       refreshButtons(grid, s);
     });
@@ -276,7 +437,9 @@
   function exit() {
     if (waiter) { waiter.disconnect(); waiter = null; }
     if (gridObserver) { gridObserver.disconnect(); gridObserver = null; }
+    closeMenu();
     style.disabled = true;
+    uiStyle.disabled = true;
     document.getElementById('pbn-cc-stepper')?.remove();
   }
 
