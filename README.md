@@ -180,6 +180,13 @@ Three pill buttons appear above the compass:
 
 The active mode is highlighted. The toggle persists for the session (resets to Walk on page reload). It works on every compass instance and survives SPA navigation.
 
+### Up / Down
+
+The game's own Up/Down exit buttons normally sit below the whole map area and vanish entirely when a room has no vertical exit. They're replaced by an **↑ Up / ↓ Down** bar directly under the compass that's always there:
+
+- In **Walk** mode they move you up or down, and are greyed out when that exit doesn't exist. Locked, broken and aerial exits keep the game's colour coding, and hovering shows the destination.
+- In **Look** / **Search** mode both are always clickable and send `/look up`, `/search down`, etc.
+
 This script has no configurable options.
 
 ---
