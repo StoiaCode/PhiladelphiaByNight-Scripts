@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PbN Compass Tools
 // @namespace    stoia.red
-// @version      1.1.2
-// @description  Shows destination room names on compass hover and adds Look/Search mode toggle.
+// @version      1.2.0
+// @description  Shows destination room names on compass hover, adds a Walk/Look/Search mode toggle, and an always-visible Up/Down bar under the compass.
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
 // @grant        none
@@ -90,8 +90,11 @@
   // (palette from the site's play stylesheet).
   const style = document.createElement('style');
   style.textContent = `
+    /* The exits pane centres its children; a shared width keeps the mode bar
+       and the Up/Down bar lined up with each other under/over the compass. */
     .pbn-compass-toggle {
       display: flex; margin-bottom: 6px; overflow: hidden;
+      width: 100%; max-width: 230px; box-sizing: border-box;
       border: 1px solid #9e2b2b80; border-radius: 6px;
     }
     .pbn-compass-toggle__btn {
@@ -105,6 +108,18 @@
     .pbn-compass-toggle__btn:focus-visible { outline: 2px solid #e0b84a; outline-offset: -2px; }
     .pbn-compass-toggle__btn--active,
     .pbn-compass-toggle__btn--active:hover { color: #f3e6cf; background: #9e2b2b; }
+
+    /* Up/Down bar under the compass replaces the site's own .vertical-exits
+       row, which is only rendered when a vertical exit exists. */
+    .vertical-exits { display: none !important; }
+    .pbn-compass-vertical { margin: 6px 0 0; }
+    .pbn-compass-toggle__btn:disabled,
+    .pbn-compass-toggle__btn:disabled:hover { color: #b0a489; opacity: .35; cursor: not-allowed; }
+    /* Mirror the native .vertical-exit-btn state colours. */
+    .pbn-compass-vertical .pbn-vx--locked { color: #d4a34b; }
+    .pbn-compass-vertical .pbn-vx--broken { color: #e07062; }
+    .pbn-compass-vertical .pbn-vx--aerial-open { color: #aaaa5a; }
+    .pbn-compass-vertical .pbn-vx--aerial-locked { color: #4a4a2a; cursor: not-allowed; }
   `;
   document.head.appendChild(style);
 
@@ -128,6 +143,7 @@
       btn.addEventListener('click', () => {
         mode = m;
         bar.querySelectorAll('button').forEach(b => updateBtnStyle(b, b.dataset.mode === mode));
+        refreshVertical();
       });
       bar.appendChild(btn);
     });
@@ -138,6 +154,72 @@
   function updateBtnStyle(btn, active) {
     btn.classList.toggle('pbn-compass-toggle__btn--active', active);
     btn.setAttribute('aria-pressed', String(active));
+  }
+
+  // --------------------------------------------------------------------------
+  // Up/Down bar. Always shown under the compass. In walk mode each button
+  // clicks the site's own (hidden) .vertical-exit-btn so Vue still does the
+  // moving, and is disabled when that exit doesn't exist. In look/search mode
+  // both are always live and send /look up, /search down, etc.
+  // --------------------------------------------------------------------------
+
+  const VERTICAL = [
+    { dir: 'up',   label: '↑ Up' },
+    { dir: 'down', label: '↓ Down' },
+  ];
+
+  // Matched on the up/down word rather than an exact "Go up" label, since
+  // aerial exits may be worded differently.
+  function nativeVertical(dir) {
+    const re = new RegExp(`\\b${dir}\\b`, 'i');
+    return Array.from(document.querySelectorAll('.vertical-exit-btn'))
+      .find(b => re.test(`${b.getAttribute('aria-label') || ''} ${b.textContent}`)) || null;
+  }
+
+  const VX_STATES = ['locked', 'broken', 'aerial-open', 'aerial-locked'];
+
+  function makeVertical(compass) {
+    if (compass.nextElementSibling?.classList.contains('pbn-compass-vertical')) return;
+
+    const bar = document.createElement('div');
+    bar.className = 'pbn-compass-toggle pbn-compass-vertical';
+    bar.setAttribute('role', 'group');
+    bar.setAttribute('aria-label', 'Vertical exits');
+
+    VERTICAL.forEach(({ dir, label }) => {
+      const btn = document.createElement('button');
+      btn.type        = 'button';
+      btn.className   = 'pbn-compass-toggle__btn';
+      btn.textContent = label;
+      btn.dataset.dir = dir;
+      btn.dataset.label = label;
+      btn.addEventListener('mousedown', e => e.preventDefault());
+      btn.addEventListener('click', () => {
+        if (mode !== 'walk') { sendCommand(`/${mode} ${dir}`); return; }
+        const native = nativeVertical(dir);
+        if (native && !native.disabled) native.click();
+      });
+      bar.appendChild(btn);
+    });
+
+    compass.after(bar);
+    refreshVertical();
+  }
+
+  function refreshVertical() {
+    document.querySelectorAll('.pbn-compass-vertical button').forEach(btn => {
+      const native = nativeVertical(btn.dataset.dir);
+      btn.disabled = mode === 'walk' && (!native || native.disabled);
+      // Only write on change: a text write is a childList mutation, which
+      // would re-trigger the body observer that calls this.
+      const text = native?.textContent.trim() || btn.dataset.label;
+      if (btn.textContent !== text) btn.textContent = text;
+      VX_STATES.forEach(s => btn.classList.toggle(`pbn-vx--${s}`,
+        !!native?.classList.contains(`vertical-exit-btn--${s}`)));
+      // Same "Go up to X" -> "X" tooltip treatment as the compass cells.
+      const match = (native?.getAttribute('aria-label') || '').match(/^Go \w+ to (.+)$/i);
+      btn.title = match ? match[1] : (native?.title || '');
+    });
   }
 
   // --------------------------------------------------------------------------
@@ -177,6 +259,7 @@
       wired.add(compass);
       applyTooltips(compass);
       makeToggle(compass);
+      makeVertical(compass);
       attachIntercept(compass);
     });
   }
@@ -204,6 +287,9 @@
     if (bodyObserver) return;
     // Re-apply tooltips when compass cells update (room changes, exits change).
     bodyObserver = new MutationObserver(mutations => {
+      // .vertical-exits appears/disappears with the room; cheap to re-sync.
+      // (Only touches disabled/title, neither of which this observer watches.)
+      refreshVertical();
       const toUpdate = new Set();
       for (const m of mutations) {
         if (m.type === 'attributes') {
