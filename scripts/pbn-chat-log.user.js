@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Chat Log
 // @namespace    stoia.red
-// @version      1.0.2
+// @version      1.0.3
 // @description  Captures chat messages to memory as they arrive and saves the session as a plain-text file on demand.
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -60,21 +60,29 @@
     URL.revokeObjectURL(url);
   }
 
+  // Matches the site's own .chat-tab buttons it sits beside (palette from
+  // the play page stylesheet), minus their flex:1 so it stays compact.
+  const style = document.createElement('style');
+  style.textContent = `
+    #${BTN_ID} {
+      margin-left: auto; flex: 0 0 auto; cursor: pointer;
+      padding: 6px 16px; background: none; border: none;
+      border-left: 1px solid #5a1212;
+      font-family: TMUnicorn, serif; font-size: .85rem; letter-spacing: .5px;
+      color: #c4b49a; transition: color .15s, background .15s;
+    }
+    #${BTN_ID}:hover { color: #e8ddd0; background: #5a121233; }
+    #${BTN_ID}:focus-visible { outline: 2px solid #e8ddd0; outline-offset: -2px; }
+  `;
+  document.head.appendChild(style);
+
   function addButton(tabBar) {
     if (document.getElementById(BTN_ID)) return;
     const btn = document.createElement('button');
+    btn.type        = 'button';
     btn.id          = BTN_ID;
     btn.textContent = 'Save Log';
     btn.title       = 'Download this session\'s chat as a text file';
-    btn.style.cssText = [
-      'cursor:pointer', 'font:12px/1.4 inherit',
-      'padding:3px 8px', 'border-radius:4px',
-      'border:1px solid rgba(255,255,255,0.25)',
-      'background:rgba(255,255,255,0.06)', 'color:inherit',
-      'margin-left:auto', 'flex-shrink:0',
-    ].join(';');
-    btn.addEventListener('mouseenter', () => btn.style.background = 'rgba(255,255,255,0.14)');
-    btn.addEventListener('mouseleave', () => btn.style.background = 'rgba(255,255,255,0.06)');
     btn.addEventListener('mousedown',  e => e.preventDefault());
     btn.addEventListener('click', saveLog);
     tabBar.appendChild(btn);

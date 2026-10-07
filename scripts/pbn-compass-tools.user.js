@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Compass Tools
 // @namespace    stoia.red
-// @version      1.1.1
+// @version      1.1.2
 // @description  Shows destination room names on compass hover and adds Look/Search mode toggle.
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -86,24 +86,43 @@
 
   const MODES = ['walk', 'look', 'search'];
 
+  // Segmented toggle in the style of the play page's own .tab-toggle
+  // (palette from the site's play stylesheet).
+  const style = document.createElement('style');
+  style.textContent = `
+    .pbn-compass-toggle {
+      display: flex; margin-bottom: 6px; overflow: hidden;
+      border: 1px solid #9e2b2b80; border-radius: 6px;
+    }
+    .pbn-compass-toggle__btn {
+      flex: 1; cursor: pointer; padding: 5px 8px;
+      background: none; border: none;
+      font-family: 'Courier New', monospace; font-size: .9rem; letter-spacing: .04em;
+      color: #b0a489; transition: background .12s, color .12s;
+    }
+    .pbn-compass-toggle__btn + .pbn-compass-toggle__btn { border-left: 1px solid #9e2b2b59; }
+    .pbn-compass-toggle__btn:hover { color: #e8dcc0; }
+    .pbn-compass-toggle__btn:focus-visible { outline: 2px solid #e0b84a; outline-offset: -2px; }
+    .pbn-compass-toggle__btn--active,
+    .pbn-compass-toggle__btn--active:hover { color: #f3e6cf; background: #9e2b2b; }
+  `;
+  document.head.appendChild(style);
+
   function makeToggle(compass) {
     if (compass.previousElementSibling?.id === 'pbn-compass-toggle') return;
 
     const bar = document.createElement('div');
     bar.id = 'pbn-compass-toggle';
-    bar.style.cssText = 'display:flex;gap:4px;margin-bottom:4px;';
+    bar.className = 'pbn-compass-toggle';
+    bar.setAttribute('role', 'group');
+    bar.setAttribute('aria-label', 'Compass click mode');
 
     MODES.forEach(m => {
       const btn = document.createElement('button');
       btn.type        = 'button';
+      btn.className   = 'pbn-compass-toggle__btn';
       btn.textContent = m.charAt(0).toUpperCase() + m.slice(1);
       btn.dataset.mode = m;
-      btn.style.cssText = [
-        'cursor:pointer', 'font:11px/1.4 inherit',
-        'padding:2px 8px', 'border-radius:4px',
-        'border:1px solid rgba(255,255,255,0.25)',
-        'color:inherit', 'flex:1',
-      ].join(';');
       updateBtnStyle(btn, m === mode);
       btn.addEventListener('mousedown', e => e.preventDefault());
       btn.addEventListener('click', () => {
@@ -117,10 +136,8 @@
   }
 
   function updateBtnStyle(btn, active) {
-    btn.style.background = active
-      ? 'rgba(255,255,255,0.22)'
-      : 'rgba(255,255,255,0.06)';
-    btn.style.fontWeight = active ? '600' : '400';
+    btn.classList.toggle('pbn-compass-toggle__btn--active', active);
+    btn.setAttribute('aria-pressed', String(active));
   }
 
   // --------------------------------------------------------------------------

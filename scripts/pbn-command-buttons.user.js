@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Command Buttons
 // @namespace    stoia.red
-// @version      1.3.1
+// @version      1.3.2
 // @description  Adds quick-command buttons (/ooc /say /emote /pose ...) above the MUSH input box. Buttons are editable in-page via the userscript menu (no script editing needed).
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -189,24 +189,72 @@
     }
   }
 
+  // ----------------------------------------------------------------------
+  // STYLES — palette from the play page's own stylesheet: buttons follow
+  // its .tab-toggle (Courier, muted gold on dark red), the editor follows
+  // the chat panel's dark-red framing. Injected once and kept for the life
+  // of the page, since the editor can be opened from any route.
+  // ----------------------------------------------------------------------
+
+  const style = document.createElement('style');
+  style.textContent = `
+    #${BAR_ID} { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 4px; align-items: center; }
+    .pbn-cmd-btn {
+      flex: 0 0 auto; cursor: pointer; padding: 6px 14px;
+      background: #120a0a; border: 1px solid #9e2b2b80; border-radius: 6px;
+      font-family: 'Courier New', monospace; font-size: .9rem; letter-spacing: .04em;
+      color: #b0a489; transition: background .12s, color .12s;
+    }
+    .pbn-cmd-btn:hover { color: #e8dcc0; background: #5a121233; }
+    .pbn-cmd-btn:focus-visible { outline: 2px solid #e0b84a; outline-offset: -2px; }
+    .pbn-cmd-btn:active,
+    .pbn-cmd-btn--open { color: #f3e6cf; background: #9e2b2b; }
+    .pbn-cmd-btn--primary { color: #f3e6cf; background: #9e2b2b; border-color: #9e2b2b; }
+    .pbn-cmd-btn--primary:hover { color: #fff; background: #b33434; }
+    .pbn-cmd-expand { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+    .pbn-cmd-field {
+      width: 200px; padding: 5px 8px;
+      background: #0d0707; border: 1px solid #9e2b2b80; border-radius: 6px;
+      font-family: 'Courier New', monospace; font-size: .9rem; color: #e8dcc0;
+    }
+    .pbn-cmd-field:focus { outline: none; border-color: #e0b84a; }
+
+    #${EDITOR_ID} {
+      position: fixed; inset: 0; z-index: 2147483647;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.65); font: 15px/1.5 Georgia, 'Times New Roman', serif;
+    }
+    .pbn-cmd-editor__panel {
+      width: min(600px, 92vw); max-height: 85vh; overflow: auto;
+      box-sizing: border-box; padding: 20px 22px;
+      background: #120a0a; color: #e8ddd0;
+      border: 1px solid #5a1212; border-radius: 6px;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+    }
+    .pbn-cmd-editor__heading {
+      font-family: TMUnicorn, serif; font-size: 1.3rem; letter-spacing: .5px;
+      color: #e8ddd0; margin-bottom: 10px;
+    }
+    .pbn-cmd-editor__help { color: #c4b49a; margin-bottom: 12px; }
+    .pbn-cmd-editor__help code { color: #e0b84a; }
+    .pbn-cmd-editor__json {
+      width: 100%; box-sizing: border-box; height: 300px; resize: vertical;
+      padding: 10px; white-space: pre;
+      font: 14px/1.45 'Courier New', monospace; color: #e8dcc0;
+      background: #0d0707; border: 1px solid #5a1212; border-radius: 4px;
+    }
+    .pbn-cmd-editor__json:focus { outline: none; border-color: #9e2b2b; }
+    .pbn-cmd-editor__msg { min-height: 20px; margin: 8px 0; white-space: pre-wrap; }
+    .pbn-cmd-editor__row { display: flex; gap: 8px; align-items: center; }
+  `;
+  document.head.appendChild(style);
+
   function makeButton(label, cmd) {
     const btn = document.createElement('button');
     btn.type = 'button';
+    btn.className = 'pbn-cmd-btn';
     btn.textContent = label;
     btn.title = cmd;
-    btn.style.cssText = [
-      'cursor:pointer', 'font:12px/1.4 inherit',
-      'padding:4px 10px', 'border-radius:4px',
-      'border:1px solid rgba(255,255,255,0.25)',
-      'background:rgba(255,255,255,0.06)', 'color:inherit',
-      'flex:0 0 auto',
-    ].join(';');
-    btn.addEventListener('mouseenter', () => {
-      btn.style.background = 'rgba(255,255,255,0.14)';
-    });
-    btn.addEventListener('mouseleave', () => {
-      btn.style.background = 'rgba(255,255,255,0.06)';
-    });
     // mousedown + preventDefault keeps focus off the button.
     btn.addEventListener('mousedown', (e) => e.preventDefault());
     return btn;
@@ -223,28 +271,27 @@
   // put, so a fast double-click lands on it twice); click 2 sends cmd + text.
   function makeExpandButton(input, label, cmd) {
     const wrap = document.createElement('span');
-    wrap.style.cssText = 'display:inline-flex;align-items:center;gap:4px;flex:0 0 auto;';
+    wrap.className = 'pbn-cmd-expand';
 
     const btn = makeButton(label, cmd);
 
     const field = document.createElement('input');
     field.type = 'text';
+    field.className = 'pbn-cmd-field';
     field.placeholder = `${cmd} …`;
-    field.style.cssText = [
-      'display:none', 'font:12px/1.4 inherit', 'padding:3px 6px',
-      'border-radius:4px', 'border:1px solid rgba(255,255,255,0.25)',
-      'background:rgba(0,0,0,0.30)', 'color:inherit', 'width:180px',
-    ].join(';');
+    field.style.display = 'none';
 
     let expanded = false;
 
     function collapse() {
       expanded = false;
+      btn.classList.remove('pbn-cmd-btn--open');
       field.style.display = 'none';
       field.value = '';
     }
     function expand() {
       expanded = true;
+      btn.classList.add('pbn-cmd-btn--open');
       field.style.display = '';
       field.focus();
     }
@@ -273,10 +320,6 @@
   function buildBar(input) {
     const bar = document.createElement('div');
     bar.id = BAR_ID;
-    bar.style.cssText = [
-      'display:flex', 'flex-wrap:wrap', 'gap:6px',
-      'padding:6px 4px', 'align-items:center',
-    ].join(';');
 
     for (const { label, cmd, submit, expand } of commands) {
       const el = expand
@@ -321,12 +364,7 @@
     const b = document.createElement('button');
     b.type = 'button';
     b.textContent = text;
-    b.style.cssText = [
-      'cursor:pointer', 'font:13px/1 inherit', 'padding:7px 14px',
-      'border-radius:5px', 'border:1px solid rgba(255,255,255,0.25)',
-      primary ? 'background:#3a6df0' : 'background:rgba(255,255,255,0.10)',
-      'color:#fff', 'flex:0 0 auto',
-    ].join(';');
+    b.className = primary ? 'pbn-cmd-btn pbn-cmd-btn--primary' : 'pbn-cmd-btn';
     return b;
   }
 
@@ -335,27 +373,16 @@
 
     const overlay = document.createElement('div');
     overlay.id = EDITOR_ID;
-    overlay.style.cssText = [
-      'position:fixed', 'inset:0', 'z-index:2147483647',
-      'display:flex', 'align-items:center', 'justify-content:center',
-      'background:rgba(0,0,0,0.6)', 'font:13px/1.5 sans-serif',
-    ].join(';');
 
     const panel = document.createElement('div');
-    panel.style.cssText = [
-      'width:min(560px,92vw)', 'max-height:85vh', 'overflow:auto',
-      'box-sizing:border-box', 'padding:18px 20px',
-      'border-radius:8px', 'border:1px solid rgba(255,255,255,0.2)',
-      'background:#1e1e24', 'color:#eee',
-      'box-shadow:0 8px 40px rgba(0,0,0,0.5)',
-    ].join(';');
+    panel.className = 'pbn-cmd-editor__panel';
 
     const heading = document.createElement('div');
+    heading.className = 'pbn-cmd-editor__heading';
     heading.textContent = 'Edit command buttons';
-    heading.style.cssText = 'font-size:16px;font-weight:600;margin-bottom:8px;';
 
     const help = document.createElement('div');
-    help.style.cssText = 'opacity:0.85;margin-bottom:10px;';
+    help.className = 'pbn-cmd-editor__help';
     help.innerHTML =
       'One entry per button. Each needs <code>"label"</code> (button text) and ' +
       '<code>"cmd"</code> (what gets pasted). Optional: <code>"submit": true</code> ' +
@@ -365,22 +392,16 @@
     const ta = document.createElement('textarea');
     ta.value = JSON.stringify(commands, null, 2);
     ta.spellcheck = false;
-    ta.style.cssText = [
-      'width:100%', 'box-sizing:border-box', 'height:300px',
-      'resize:vertical', 'font:12px/1.45 monospace',
-      'padding:8px', 'border-radius:6px',
-      'border:1px solid rgba(255,255,255,0.25)',
-      'background:#13131a', 'color:#eee', 'white-space:pre',
-    ].join(';');
+    ta.className = 'pbn-cmd-editor__json';
 
     const msg = document.createElement('div');
-    msg.style.cssText = 'min-height:18px;margin:8px 0;white-space:pre-wrap;';
+    msg.className = 'pbn-cmd-editor__msg';
 
-    function showError(text) { msg.style.color = '#ff8080'; msg.textContent = text; }
-    function showInfo(text) { msg.style.color = '#8fdc8f'; msg.textContent = text; }
+    function showError(text) { msg.style.color = '#f0906a'; msg.textContent = text; }
+    function showInfo(text) { msg.style.color = '#6bdb7e'; msg.textContent = text; }
 
     const row = document.createElement('div');
-    row.style.cssText = 'display:flex;gap:8px;align-items:center;';
+    row.className = 'pbn-cmd-editor__row';
 
     const resetBtn = modalButton('Reset to defaults', false);
     const spacer = document.createElement('div');
