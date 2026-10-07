@@ -142,9 +142,15 @@ This script has no configurable options.
 
 ## PbN Chat Log
 
-Adds a **Save Log** button to the chat tab bar. Messages are captured to memory as they arrive (timestamped at the moment they appear), and clicking the button downloads the full session as a plain `.txt` file named `pbn-log-YYYY-MM-DD-HHMMSS.txt`.
+Adds a **Save Log** button to the chat tab bar. Messages are captured to memory as they arrive, and clicking the button downloads the full session as a plain `.txt` file named `pbn-log-YYYY-MM-DD-HHMMSS.txt`.
 
-Nothing is written to browser storage — the log lives in memory only and is gone when the tab closes. Messages already on screen when the script loads are backfilled with the session-start timestamp.
+- **RP tab only.** The log matches what the RP tab shows; anything the game routes to the Activity tab is left out.
+- **Recorded from the game's own message list, not the screen**, so it keeps going no matter how long the session runs or how busy the room gets. (Versions before 1.1.0 read the chat on screen and could silently stop partway through a session.)
+- **Server timestamps** where the game provides them; otherwise the time the message arrived.
+- **Readable lines** — names, "says,"/"exclaims,", emotes and room tags are properly spaced (`[The Assembly Hall] Seamus says, "…"`).
+- **No duplicates after reconnecting** — the game's "recent activity" replay is skipped for lines already logged, but anything you missed while disconnected is kept.
+
+Nothing is written to browser storage — the log lives in memory only and is gone when the tab closes. Messages already in the chat when the script loads are included too.
 
 This script has no configurable options.
 
