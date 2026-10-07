@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         PbN Character Cards
 // @namespace    stoia.red
-// @version      1.1.0
+// @version      1.2.0
 // @description  Reorder your character cards, choose how many appear per row, and tidy recast/leave/delete into an Options menu on the My Characters page.
 // @match        https://philadelphiabynight.net/*
-// @run-at       document-idle
+// @run-at       document-start
 // @grant        none
 // @downloadURL  https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-character-cards.user.js
 // @updateURL    https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-character-cards.user.js
@@ -13,10 +13,14 @@
 (function () {
   'use strict';
 
-  // The exact URL of the "My Characters" page isn't known (its nav link is a
-  // <div>, not an <a href>, wired up via a programmatic router push), so
-  // @match is left sitewide and real activation is gated on the .mc-grid
-  // element actually existing — see watchRoute() at the bottom.
+  // The My Characters page lives at /vtm/my_characters, reached via Vue
+  // Router pushState, so @match is sitewide and activation is gated on that
+  // route (or the .mc-grid element existing) — see watchRoute() at the bottom.
+  //
+  // No layout shift: runs at document-start so the column count and a
+  // "hidden until arranged" rule are in place before the site's first paint.
+  // The grid is revealed only once cards are ordered and wired, all from
+  // MutationObserver callbacks that run before the browser paints.
 
   const STORAGE_KEY = 'pbn-character-cards';
   const DEFAULT_COLS = 3;
@@ -49,8 +53,8 @@
   }
 
   // --------------------------------------------------------------------------
-  // Ordering — uses the CSS `order` property so it works whether .mc-grid
-  // turns out to be a CSS Grid or a Flexbox container.
+  // Ordering — via the CSS `order` property, so Vue's own DOM order (which it
+  // owns and re-patches) is never touched.
   // --------------------------------------------------------------------------
 
   function currentOrderedCards(grid) {
@@ -62,6 +66,9 @@
 
   function applyOrderAndPrune(grid, state) {
     const keyed = Array.from(grid.querySelectorAll(':scope > .mc-card')).map(c => ({ c, key: getCardKey(c) }));
+    // The grid can render before its cards load; pruning against an empty
+    // grid would wipe the saved order.
+    if (!keyed.length) return;
     const present = new Set(keyed.map(x => x.key));
     const known = state.order.filter(k => present.has(k));
     const knownSet = new Set(known);
@@ -92,44 +99,39 @@
   }
 
   // --------------------------------------------------------------------------
-  // Column count. .mc-grid's real layout mode (Grid vs Flexbox) isn't known
-  // without the site's stylesheet, so it's detected at runtime and only the
-  // matching rule is injected — NOT both. A percentage max-width/flex-basis
-  // applies to any box regardless of display type, so if .mc-grid actually
-  // uses CSS Grid, a max-width rule sitting alongside grid-template-columns
-  // would resolve against the item's own (already 1/N-sized) grid-area
-  // width, squeezing every card to roughly 1/N² of the row instead of 1/N.
+  // Static CSS, injected at document-start so it applies from the very first
+  // paint. .mc-grid is a CSS Grid (site stylesheet: auto-fill/minmax(320px)),
+  // so the column count is a plain grid-template-columns override driven by a
+  // custom property on <html>. Until the script marks the grid ready it stays
+  // invisible (still taking up space, so nothing around it jumps); a CSS-only
+  // timer reveals it after 1.5s regardless, in case the script ever breaks.
   // --------------------------------------------------------------------------
 
-  const GAP_VAR = '--pbn-cc-gap';
-  const style = document.createElement('style');
-  style.disabled = true;
-  document.head.appendChild(style);
-
-  function applyColumnCSS(grid) {
-    const isFlex = getComputedStyle(grid).display.includes('flex');
-    if (isFlex) {
-      const cs = getComputedStyle(grid);
-      const gapPx = parseFloat(cs.columnGap || cs.gap) || 0;
-      document.documentElement.style.setProperty(GAP_VAR, `${gapPx}px`);
-      style.textContent = `
-        .mc-grid > .mc-card {
-          flex: 1 1 calc((100% - (var(${COLS_VAR}, ${DEFAULT_COLS}) - 1) * var(${GAP_VAR}, 0px)) / var(${COLS_VAR}, ${DEFAULT_COLS})) !important;
-          max-width: calc((100% - (var(${COLS_VAR}, ${DEFAULT_COLS}) - 1) * var(${GAP_VAR}, 0px)) / var(${COLS_VAR}, ${DEFAULT_COLS})) !important;
-          box-sizing: border-box !important;
-        }
-      `;
-    } else {
-      style.textContent = `
-        .mc-grid {
-          grid-template-columns: repeat(var(${COLS_VAR}, ${DEFAULT_COLS}), 1fr) !important;
-        }
-      `;
-    }
-  }
+  const READY_ATTR = 'data-pbn-cc-ready';
+  const baseStyle = document.createElement('style');
+  baseStyle.textContent = `
+    .mc-grid { grid-template-columns: repeat(var(${COLS_VAR}, ${DEFAULT_COLS}), 1fr) !important; }
+    .mc-grid:not([${READY_ATTR}]) { visibility: hidden; animation: pbn-cc-failsafe 0s 1.5s forwards; }
+    @keyframes pbn-cc-failsafe { to { visibility: visible; } }
+  `;
+  (document.head || document.documentElement).appendChild(baseStyle);
 
   function setCols(n) {
     document.documentElement.style.setProperty(COLS_VAR, String(n));
+  }
+
+  setCols(loadState().cols);
+
+  // Reveal once there are cards to show, replaying the site's staggered
+  // fade-in in the saved order instead of the DOM order (the original
+  // animation already ran, invisibly, while the grid was hidden).
+  function reveal(grid) {
+    if (grid.hasAttribute(READY_ATTR) || !grid.querySelector(':scope > .mc-card')) return;
+    const cards = currentOrderedCards(grid);
+    cards.forEach((c, i) => { c.style.animationDelay = `${i * 80}ms`; c.style.animationName = 'none'; });
+    void grid.offsetWidth; // flush so clearing animationName restarts it
+    cards.forEach(c => { c.style.animationName = ''; });
+    grid.setAttribute(READY_ATTR, '');
   }
 
   // --------------------------------------------------------------------------
@@ -243,7 +245,7 @@
     .pbn-cc-stepper__btn:focus-visible { outline: 2px solid #e31c2580; outline-offset: 2px; }
     .pbn-cc-stepper__count { min-width: 1.6em; text-align: center; color: #e8ddd0; font-size: 1.05rem; }
   `;
-  document.head.appendChild(uiStyle);
+  (document.head || document.documentElement).appendChild(uiStyle);
 
   let openMenu = null;
 
@@ -399,45 +401,44 @@
 
   const wired = new WeakSet();
   let gridObserver = null;
+  let mountedGrid = null;
 
   function mount() {
     const grid = document.querySelector('.mc-grid');
     if (!grid) return false;
+    if (gridObserver) gridObserver.disconnect();
+    mountedGrid = grid;
 
     const state = loadState();
-    applyOrderAndPrune(grid, state);
-    applyColumnCSS(grid);
     setCols(state.cols);
-    style.disabled = false;
     uiStyle.disabled = false;
-
     buildStepperBar(grid, state);
-    grid.querySelectorAll(':scope > .mc-card').forEach(c => {
-      if (!wired.has(c)) { wired.add(c); wireCard(grid, state, c); }
-      wireOptions(c);
-    });
-    refreshButtons(grid, state);
 
-    // Cards can change without a route change (creating/deleting a
-    // character), so keep reconciling order/wiring while this page is up.
-    gridObserver = new MutationObserver(() => {
-      const s = loadState();
+    // Order + wire every card, then reveal. Also re-run whenever cards change
+    // without a route change (they may load after the grid itself, or a
+    // character gets created/deleted). Observer callbacks run before paint,
+    // so the unarranged state is never drawn.
+    function arrange(s) {
       applyOrderAndPrune(grid, s);
       grid.querySelectorAll(':scope > .mc-card').forEach(c => {
         if (!wired.has(c)) { wired.add(c); wireCard(grid, s, c); }
         wireOptions(c);
       });
       refreshButtons(grid, s);
-    });
+      reveal(grid);
+    }
+    arrange(state);
+    gridObserver = new MutationObserver(() => arrange(loadState()));
     gridObserver.observe(grid, { childList: true });
 
     return true;
   }
 
   // Violentmonkey only evaluates @match on a real page load; this site's Vue
-  // Router changes the URL via pushState without reloading the document, so
-  // this script self-monitors for .mc-grid rather than relying on a fixed
-  // route and tears itself down when the grid disappears.
+  // Router changes the URL via pushState without reloading the document.
+  // pushState/replaceState are wrapped so a route change is noticed in the
+  // same tick (the old 500ms poll alone left the site's unarranged layout on
+  // screen for up to half a second); the poll stays as a backstop.
   function watchRoute(isActive, enter, exit) {
     let active = null;
     function check() {
@@ -446,27 +447,46 @@
       active = on;
       (on ? enter : exit)();
     }
-    check();
+    for (const fn of ['pushState', 'replaceState']) {
+      const orig = history[fn];
+      history[fn] = function (...args) {
+        const r = orig.apply(this, args);
+        check();
+        return r;
+      };
+    }
     window.addEventListener('popstate', check);
     setInterval(check, 500);
+    check();
   }
 
-  let waiter = null;
+  // While the page is active, mount whenever a .mc-grid appears that isn't
+  // the one already mounted — first render, or Vue re-rendering the page.
+  // Watches the whole document (body may not exist yet at document-start).
+  let docObserver = null;
+
+  function syncGrid() {
+    const g = document.querySelector('.mc-grid');
+    if (g && g !== mountedGrid) mount();
+  }
 
   function enter() {
-    if (mount()) return;
-    waiter = new MutationObserver(() => { if (mount()) { waiter.disconnect(); waiter = null; } });
-    waiter.observe(document.body, { childList: true, subtree: true });
+    syncGrid();
+    docObserver = new MutationObserver(syncGrid);
+    docObserver.observe(document.documentElement, { childList: true, subtree: true });
   }
 
   function exit() {
-    if (waiter) { waiter.disconnect(); waiter = null; }
+    if (docObserver) { docObserver.disconnect(); docObserver = null; }
     if (gridObserver) { gridObserver.disconnect(); gridObserver = null; }
+    mountedGrid = null;
     closeMenu();
-    style.disabled = true;
     uiStyle.disabled = true;
     document.getElementById('pbn-cc-stepper')?.remove();
   }
 
-  watchRoute(() => !!document.querySelector('.mc-grid'), enter, exit);
+  watchRoute(
+    () => /\/my_characters\/?$/.test(location.pathname) || !!document.querySelector('.mc-grid'),
+    enter, exit,
+  );
 })();
