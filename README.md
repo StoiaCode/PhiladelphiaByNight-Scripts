@@ -186,13 +186,19 @@ This script has no configurable options.
 
 ## PbN Character Cards
 
-Lets you reorder your character cards on the **My Characters** page and
-choose how many appear per row.
+Lets you reorder your character cards on the **My Characters** page, choose
+how many appear per row, and tidies the per-card actions.
 
 - **Reordering** — every card gets ▲ / ▼ buttons next to its View/Make
-  Active/Delete actions; click to move it earlier or later in the grid.
+  Active/Options actions; click to move it earlier or later in the grid.
 - **Cards per row** — a small +/- stepper appears above the grid to control
   how many cards fit across a row.
+- **Options menu** — the **Delete** button is replaced by **Options ▾**, a
+  dropdown holding Delete plus the card's **Request a recast** and **Take
+  Leave** buttons (only the ones that card actually has). Those used to sit
+  in their own rows above the actions; now they're out of the way. Each menu
+  entry triggers the site's original button, so any confirmation dialogs work
+  exactly as before.
 
 Both the order and the per-row count are remembered per browser and
 re-applied automatically the next time you open the page. If you create or
