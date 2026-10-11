@@ -27,6 +27,7 @@ manager will open an install screen — review it and click **Install**.
 | Compass Tools | [`pbn-compass-tools.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-compass-tools.user.js) |
 | Character Cards | [`pbn-character-cards.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-character-cards.user.js) |
 | Description Presets | [`pbn-desc-presets.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-desc-presets.user.js) |
+| Language Switcher | [`pbn-speak.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-speak.user.js) |
 
 Each script declares `@updateURL`/`@downloadURL`, so your manager will pull
 updates automatically when this repo changes. After installing, reload any
@@ -246,6 +247,30 @@ A **masks icon** sits next to the mood icon at the right end of the command box.
 If the game rejects the change (for example, a short description over its length limit), the dialog is shown so you can see why.
 
 Presets are stored per browser/device, like the other scripts' settings. This script has no configurable options.
+
+---
+
+## PbN Language Switcher
+
+Switch which language you `/speak` in with a click, and see at a glance which one you're currently using.
+
+A **translate icon** sits with the other icons at the right end of the command box. While you're speaking anything other than English it turns gold and shows a short badge (e.g. `LAT`). Click it for a menu:
+
+- **English and your known languages** — click one to send `/speak <language>`. The current one has a ✓.
+- **1×** next to each language — "next line only": adds `[language]` to the line you're typing without changing your default (`/say hello` → `/say [spanish] hello`; an empty box starts a `/say [spanish] `).
+- **Manage languages…** — tick which languages this character knows.
+
+### Why you have to tell it your languages
+
+The game has no command that lists which languages a character has claimed. So the script keeps that list itself, **per character**: tick your languages once under **Manage languages…**. After that it mostly maintains itself:
+
+- When the game says **"You have learned X."** (after `/speak learn x`), X is added automatically.
+- When the game says **"You will now speak in X."**, X is marked current (and added if it wasn't listed).
+- **"You go back to speaking plain English."** switches the badge back.
+
+The current language only changes when the game confirms it, so if a switch is refused the badge stays truthful. Only the game's own system lines count; another player quoting those phrases in chat doesn't affect anything.
+
+The list is stored per browser/device. This script has no configurable options.
 
 ---
 
