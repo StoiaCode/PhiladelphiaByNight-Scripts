@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Typing Indicator De-Shift
 // @namespace    stoia.red
-// @version      1.6.0
+// @version      1.6.1
 // @description  Stops the "X is typing" indicator from nudging the command input. Floats it above the box instead.
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -68,7 +68,10 @@
     };
     Object.assign(tip.style, shared, {
       position:     'fixed',
-      zIndex:       '9999',
+      // Just enough to float over the chat/command area, which has no
+      // stacking order of its own. Kept low so Quasar's header/footer (2000),
+      // drawers (3000), dialogs/menus (6000+) and tooltips (9000) cover it.
+      zIndex:       '10',
       pointerEvents:'none',
       whiteSpace:   'nowrap',
       color:        '#ffffff',
