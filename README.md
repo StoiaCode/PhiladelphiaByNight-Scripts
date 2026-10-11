@@ -26,6 +26,7 @@ manager will open an install screen — review it and click **Install**.
 | Chat Timestamps | [`pbn-chat-timestamps.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-chat-timestamps.user.js) |
 | Compass Tools | [`pbn-compass-tools.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-compass-tools.user.js) |
 | Character Cards | [`pbn-character-cards.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-character-cards.user.js) |
+| Description Presets | [`pbn-desc-presets.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-desc-presets.user.js) |
 
 Each script declares `@updateURL`/`@downloadURL`, so your manager will pull
 updates automatically when this repo changes. After installing, reload any
@@ -219,6 +220,32 @@ delete a character, new cards join the end of your saved order and removed
 ones are quietly dropped from it — nothing to fix up by hand.
 
 This script has no configurable options.
+
+---
+
+## PbN Description Presets
+
+Save your `/setdesc` looks as named presets and swap between them in one click: hooded and revealed, disguised and not, in and out of costume.
+
+A preset can include any mix of the four description fields: **short description**, **full description**, **arrive message** and **depart message**. Applying it only changes the fields it includes, so a "Hood up" preset can swap the descriptions while leaving your entrance and exit lines alone.
+
+Presets are kept **per character**, so each of your characters has their own list.
+
+### Saving a preset
+
+1. Open `/setdesc` and set the fields the way you want this look to be.
+2. In the **Presets** row at the top of the dialog, click **Save current as preset…**.
+3. Name it, untick any fields this look shouldn't change, and click **Save preset**. Saving under an existing name asks before replacing it.
+
+Clicking a preset in that row fills the dialog's fields; check them and press the dialog's own **Save**. The preset matching what's currently in the fields is highlighted. **×** deletes a preset (your actual description isn't touched).
+
+### Switching in one click
+
+A **masks icon** sits next to the mood icon at the right end of the command box. Click it and pick a look: the script opens `/setdesc` out of sight, fills it in and saves it, and the game confirms with its usual "description(s) have been updated" line. Whatever you were halfway through typing in the command box is put back. The look you last applied has a ✓.
+
+If the game rejects the change (for example, a short description over its length limit), the dialog is shown so you can see why.
+
+Presets are stored per browser/device, like the other scripts' settings. This script has no configurable options.
 
 ---
 
