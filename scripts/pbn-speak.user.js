@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Language Switcher
 // @namespace    stoia.red
-// @version      1.0.0
+// @version      1.0.1
 // @description  Per-character list of known languages with one-click /speak switching and a "next line only" [language] prefix.
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -128,6 +128,12 @@
     }
   }
 
+  // The game renders these with its "system" template, which is what puts
+  // the orange [SYSTEM] label in front.
+  function isSystemLine(m) {
+    return m.type === 'system' || /\[SYSTEM\]/.test(m.html || '');
+  }
+
   const seenMsgs = new WeakSet();
   let hooked = null; // { inst, stops }
 
@@ -138,9 +144,10 @@
       const m = list[i];
       seenMsgs.add(m.__v_raw || m);
       if (m.isHistory) continue; // replayed room history may be someone else's old state
-      // Only the game's own lines: a player's say/LOOC carries a sender
-      // (`from`) and could quote these phrases.
-      if (m.from) continue;
+      // Only the game's own [SYSTEM] lines, so a player quoting these phrases
+      // in say/LOOC can't change anything. (Checking for a missing sender
+      // didn't work: system lines can carry `from` too.)
+      if (!isSystemLine(m)) continue;
       if (typeof m.text === 'string') onGameText(m.text);
     }
   }
