@@ -95,6 +95,25 @@ malformed, so a typo won't break the bar. **Reset to defaults** reloads the
 built-in list into the editor (click **Save** to apply it). **Cancel**,
 Escape, or clicking outside the panel discards changes.
 
+### Per-character buttons
+
+Each character can have **its own button list** or use the **shared list**
+(the one everyone starts with; an existing setup becomes the shared list
+automatically).
+
+Open the editor while playing a character and the top line reads
+"*Name* uses: ( ) the shared list ( ) its own list":
+
+- **its own list** — edit buttons only that character sees. The first time,
+  it starts as a copy of the shared list, so you only change what differs.
+- **the shared list** — edit the list every character without its own list
+  uses. Picking this for a character that had its own list and saving
+  deletes that own list (the editor says so before you save).
+
+The bar switches automatically when you play a different character. The
+character is read from the journal sidebar's title; if the editor is opened
+somewhere it can't see one, it simply edits the shared list.
+
 > Note: settings are stored per browser/device, so if you play on more than one
 > machine you'll configure each once.
 

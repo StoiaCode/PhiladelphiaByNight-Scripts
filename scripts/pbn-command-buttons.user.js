@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Command Buttons
 // @namespace    stoia.red
-// @version      1.3.3
+// @version      1.4.0
 // @description  Adds quick-command buttons (/ooc /say /emote /pose ...) above the MUSH input box. Buttons are editable in-page via the userscript menu (no script editing needed).
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -78,33 +78,61 @@
     return DEFAULT_COMMANDS.map(c => Object.assign({}, c));
   }
 
-  // Read the stored list, falling back to defaults if absent/corrupt.
-  function loadCommands() {
+  // Per-character lists. STORAGE_KEY keeps the shared list (the only list
+  // before per-character support, so existing setups carry over untouched);
+  // BY_CHAR_KEY maps a character name to that character's own list. A
+  // character without an own list uses the shared one.
+  const BY_CHAR_KEY = 'pbn_commands_by_char';
+
+  function gmGet(key) {
+    try { return typeof GM_getValue === 'function' ? GM_getValue(key, '') : ''; }
+    catch (e) { return ''; }
+  }
+
+  function gmSet(key, value) {
+    try { if (typeof GM_setValue === 'function') GM_setValue(key, value); }
+    catch (e) { /* storage unavailable; live list still updates */ }
+  }
+
+  // Read the shared list, falling back to defaults if absent/corrupt.
+  function loadShared() {
     try {
-      if (typeof GM_getValue === 'function') {
-        const raw = GM_getValue(STORAGE_KEY, '');
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (validateCommands(parsed)) return parsed;
-        }
+      const raw = gmGet(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (validateCommands(parsed)) return parsed;
       }
     } catch (e) { /* fall through to defaults */ }
     return defaultsCopy();
   }
 
-  // Persist a (pre-validated) list and refresh derived state.
-  function saveCommands(arr) {
-    commands = arr;
-    refreshKnownCmds();
-    try {
-      if (typeof GM_setValue === 'function') {
-        GM_setValue(STORAGE_KEY, JSON.stringify(arr));
-      }
-    } catch (e) { /* storage unavailable; live list still updates */ }
+  function saveShared(arr) { gmSet(STORAGE_KEY, JSON.stringify(arr)); }
+
+  function loadByChar() {
+    try { return JSON.parse(gmGet(BY_CHAR_KEY) || '{}') || {}; }
+    catch (e) { return {}; }
+  }
+
+  function saveByChar(map) { gmSet(BY_CHAR_KEY, JSON.stringify(map)); }
+
+  function ownList(name) {
+    const own = name ? loadByChar()[name] : null;
+    return validateCommands(own) ? own : null;
+  }
+
+  // The list a character actually uses.
+  function commandsFor(name) { return ownList(name) || loadShared(); }
+
+  // Active character, from the journal sidebar title ("Vergil's Journal").
+  // Plain DOM text, so it works whether or not the userscript manager runs
+  // this script in a sandbox. null when not known (yet).
+  function getCharName() {
+    const m = document.querySelector('.journal-title')?.textContent.trim().match(/^(.+?)['’]s Journal$/);
+    return m ? m[1] : null;
   }
 
   // Live command list + the set of known command prefixes (for swapping).
-  let commands = loadCommands();
+  let commands = loadShared();
   let knownCmds = commands.map(c => c.cmd);
   function refreshKnownCmds() { knownCmds = commands.map(c => c.cmd); }
 
@@ -238,6 +266,14 @@
       font-family: TMUnicorn, serif; font-size: 1.3rem; letter-spacing: .5px;
       color: #e8ddd0; margin-bottom: 10px;
     }
+    .pbn-cmd-editor__scope {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px;
+      margin-bottom: 6px; font-size: 1rem; color: #e8ddd0;
+    }
+    .pbn-cmd-editor__scope label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: #c4b49a; }
+    .pbn-cmd-editor__scope label:has(input:checked) { color: #f3e6cf; }
+    .pbn-cmd-editor__scope input { accent-color: #9e2b2b; width: 16px; height: 16px; margin: 0; }
+    .pbn-cmd-editor__note { color: #9a8a7a; font-style: italic; font-size: .95rem; margin-bottom: 12px; }
     .pbn-cmd-editor__help { color: #c4b49a; margin-bottom: 12px; }
     .pbn-cmd-editor__help code { color: #e0b84a; }
     .pbn-cmd-editor__json {
@@ -338,15 +374,24 @@
     if (existing) existing.remove();
   }
 
+  // Character the current bar was built for (undefined = no bar yet).
+  let barChar;
+
   function mount() {
     const input = findInput();
     if (!input) return;
 
+    const name = getCharName();
     const existing = document.getElementById(BAR_ID);
-    // Re-mount if the bar is gone or detached from the current input's area.
-    if (existing && existing.isConnected) return;
+    // Re-mount if the bar is gone, detached from the current input's area,
+    // or was built for a different character (the name can also arrive a
+    // moment after the bar first mounts).
+    if (existing && existing.isConnected && name === barChar) return;
     removeBar();
 
+    barChar = name;
+    commands = commandsFor(name);
+    refreshKnownCmds();
     const bar = buildBar(input);
     // Place the bar just above the input's field container.
     const anchor = input.closest('.q-field') || input.parentElement || input;
@@ -380,9 +425,68 @@
     const panel = document.createElement('div');
     panel.className = 'pbn-cmd-editor__panel';
 
+    // Which list is being edited. With a known character the editor edits
+    // the list that character uses: its own, or the shared one. Choosing
+    // "the shared list" for a character that had its own list deletes that
+    // own list on save.
+    const name = getCharName();
+    const hadOwn = !!ownList(name);
+    let scope = hadOwn ? 'own' : 'shared';
+    const drafts = {
+      shared: JSON.stringify(loadShared(), null, 2),
+      own: JSON.stringify(ownList(name) || loadShared(), null, 2),
+    };
+
     const heading = document.createElement('div');
     heading.className = 'pbn-cmd-editor__heading';
-    heading.textContent = 'Edit command buttons';
+    heading.textContent = name ? `Edit command buttons — ${name}` : 'Edit command buttons';
+
+    const scopeRow = document.createElement('div');
+    scopeRow.className = 'pbn-cmd-editor__scope';
+    const note = document.createElement('div');
+    note.className = 'pbn-cmd-editor__note';
+
+    function renderNote() {
+      if (!name) {
+        note.textContent = 'No character detected, so this edits the shared list used by every character. ' +
+          'Open it from the play page to give a character its own buttons.';
+      } else if (scope === 'shared') {
+        note.textContent = hadOwn
+          ? `Saving deletes ${name}'s own list, and ${name} goes back to the shared list. ` +
+            'Edits apply to every character using the shared list.'
+          : 'Edits apply to every character using the shared list.';
+      } else {
+        note.textContent = hadOwn
+          ? `Only ${name} sees these buttons.`
+          : `Starts as a copy of the shared list. Only ${name} will see these buttons.`;
+      }
+    }
+
+    const ta = document.createElement('textarea');
+    ta.value = drafts[scope];
+    ta.spellcheck = false;
+    ta.className = 'pbn-cmd-editor__json';
+
+    if (name) {
+      scopeRow.append(document.createTextNode(`${name} uses:`));
+      [['shared', 'the shared list'], ['own', 'its own list']].forEach(([value, text]) => {
+        const label = document.createElement('label');
+        const radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = 'pbn-cmd-scope';
+        radio.value = value;
+        radio.checked = value === scope;
+        radio.addEventListener('change', () => {
+          drafts[scope] = ta.value; // keep unsaved edits per list while switching
+          scope = value;
+          ta.value = drafts[scope];
+          renderNote();
+        });
+        label.append(radio, document.createTextNode(text));
+        scopeRow.appendChild(label);
+      });
+    }
+    renderNote();
 
     const help = document.createElement('div');
     help.className = 'pbn-cmd-editor__help';
@@ -391,11 +495,6 @@
       '<code>"cmd"</code> (what gets pasted). Optional: <code>"submit": true</code> ' +
       'sends immediately, or <code>"expand": true</code> opens an input field first. ' +
       'Changes are saved permanently in your userscript manager.';
-
-    const ta = document.createElement('textarea');
-    ta.value = JSON.stringify(commands, null, 2);
-    ta.spellcheck = false;
-    ta.className = 'pbn-cmd-editor__json';
 
     const msg = document.createElement('div');
     msg.className = 'pbn-cmd-editor__msg';
@@ -430,7 +529,18 @@
                   '"submit"/"expand" must be true or false if present.');
         return;
       }
-      saveCommands(parsed);
+      if (name && scope === 'own') {
+        const map = loadByChar();
+        map[name] = parsed;
+        saveByChar(map);
+      } else {
+        saveShared(parsed);
+        if (name && hadOwn) {
+          const map = loadByChar();
+          delete map[name];
+          saveByChar(map);
+        }
+      }
       rerender();
       close();
     }
@@ -458,6 +568,8 @@
     row.appendChild(saveBtn);
 
     panel.appendChild(heading);
+    if (name) panel.appendChild(scopeRow);
+    panel.appendChild(note);
     panel.appendChild(help);
     panel.appendChild(ta);
     panel.appendChild(msg);
