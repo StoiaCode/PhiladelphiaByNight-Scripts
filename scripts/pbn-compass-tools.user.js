@@ -1,9 +1,10 @@
 // ==UserScript==
 // @name         PbN Compass Tools
 // @namespace    stoia.red
-// @version      1.2.0
+// @version      1.3.0
 // @description  Shows destination room names on compass hover, adds a Walk/Look/Search mode toggle, and an always-visible Up/Down bar under the compass.
 // @match        https://philadelphiabynight.net/*
+// @match        https://map.stoia.red/*
 // @run-at       document-idle
 // @grant        none
 // @downloadURL  https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-compass-tools.user.js
@@ -12,6 +13,15 @@
 
 (function () {
   'use strict';
+
+  // On MUSH Mapper this script does nothing but leave a marker saying a
+  // userscript manager is installed, so the mapper can offer its own
+  // add-ons to script users only. Websites can't see installed extensions,
+  // so a script that's already running is the only reliable signal.
+  if (location.hostname === 'map.stoia.red') {
+    document.documentElement.dataset.pbnScripts = '1';
+    return;
+  }
 
   // Maps button label -> full direction word sent in commands.
   const DIR = {
