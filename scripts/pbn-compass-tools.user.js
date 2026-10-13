@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Compass Tools
 // @namespace    stoia.red
-// @version      1.3.0
+// @version      1.3.1
 // @description  Shows destination room names on compass hover, adds a Walk/Look/Search mode toggle, and an always-visible Up/Down bar under the compass.
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -220,10 +220,11 @@
     document.querySelectorAll('.pbn-compass-vertical button').forEach(btn => {
       const native = nativeVertical(btn.dataset.dir);
       btn.disabled = mode === 'walk' && (!native || native.disabled);
-      // Only write on change: a text write is a childList mutation, which
-      // would re-trigger the body observer that calls this.
-      const text = native?.textContent.trim() || btn.dataset.label;
-      if (btn.textContent !== text) btn.textContent = text;
+      // Always the plain "↑ Up" / "↓ Down": the native button's text can carry
+      // markers (locked, flight, broken door) and those states are shown by
+      // the pbn-vx--* colours below instead. Only write on change: a text
+      // write is a childList mutation, which re-triggers the body observer.
+      if (btn.textContent !== btn.dataset.label) btn.textContent = btn.dataset.label;
       VX_STATES.forEach(s => btn.classList.toggle(`pbn-vx--${s}`,
         !!native?.classList.contains(`vertical-exit-btn--${s}`)));
       // Same "Go up to X" -> "X" tooltip treatment as the compass cells.
@@ -237,6 +238,20 @@
   // In non-walk modes, prevent navigation and send the appropriate command.
   // --------------------------------------------------------------------------
 
+  // The direction a compass cell stands for, ignoring whatever markers the
+  // site draws on it (locked "=", flight, broken door, ...). The aria-label
+  // spells it out in words ("Go north to …", "Northwest: no exit"); the cell
+  // text is only a fallback, reduced to its N/NE/… letters.
+  const DIR_WORD_RE = /\b(?:north|south)(?:east|west)?\b|\b(?:east|west)\b/i;
+  const DIR_ABBR_RE = /(?:^|[^A-Z])(NW|NE|SW|SE|N|E|S|W)(?=[^A-Z]|$)/;
+
+  function cellDirection(cell) {
+    const word = (cell.getAttribute('aria-label') || '').match(DIR_WORD_RE);
+    if (word) return word[0].toLowerCase();
+    const abbr = cell.textContent.toUpperCase().match(DIR_ABBR_RE);
+    return abbr ? DIR[abbr[1]] : null;
+  }
+
   function attachIntercept(compass) {
     if (compass.dataset.pbnIntercepted) return;
     compass.dataset.pbnIntercepted = '1';
@@ -246,7 +261,7 @@
       if (mode === 'walk') return;
       const cell = e.target.closest('.compass__cell');
       if (!cell) return;
-      const dir = DIR[cell.textContent.trim().replace(/=+$/, '').toUpperCase()];
+      const dir = cellDirection(cell);
       if (dir) sendCommand(`/${mode} ${dir}`);
     }, true);
 
