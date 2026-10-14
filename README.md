@@ -181,7 +181,17 @@ A **Search** button sits next to **Save Log**. Type to search the chat: the newe
 - **Esc** (or ✕) closes the search and clears the highlights.
 - Case and spacing don't matter, so `vergil says` finds lines where the game runs the name and "says," together.
 
-Search covers the messages currently in the chat. The game only keeps the last 500 on the page; anything older is still in your **Save Log** file.
+Search covers the messages currently in the chat. The game only keeps the last 500 on the page; anything older is still in your **Save Log** file. Messages you've hidden (below) are skipped.
+
+### Hide
+
+**Hide** temporarily removes messages from the chat, for clean screenshots or for backreading without a wall of whispers. Click it for:
+
+- **Whispers**, **System messages**, **OOC & LOOC** — tick to hide every message of that kind, including ones that arrive while it's on. "Whispers" covers whispers to you, overheard whispers, and the "X whispers to Y" / "A whisper brushes…" notices.
+- **Pick messages to hide…** — click messages to hide them. While picking, hidden messages stay faintly visible and struck through so you can click them back; press **Done** (or Esc) to finish. The button then shows how many you've hidden (`Hide · 3`).
+- **Show all hidden** — brings everything back and turns the filters off.
+
+It's display-only and deliberately temporary: nothing is saved, a reload or switching chat tabs brings everything back, and your **Save Log** file still contains every message.
 
 This script has no configurable options.
 

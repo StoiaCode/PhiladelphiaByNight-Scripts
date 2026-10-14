@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Chat Log
 // @namespace    stoia.red
-// @version      1.2.0
+// @version      1.3.0
 // @description  Records the RP chat as it arrives and saves the session as a plain-text file on demand.
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -33,6 +33,7 @@
   const ARTICLE_SELECTOR = '[role="article"]';
   const BTN_ID           = 'pbn-log-btn';
   const SEARCH_ID        = 'pbn-log-search';
+  const HIDE_ID          = 'pbn-log-hide';
   const FALLBACK_AFTER_MS = 5000;
 
   const sessionStart = new Date();
@@ -233,12 +234,51 @@
     #${BTN_ID}:hover { color: #e8ddd0; background: #5a121233; }
     #${BTN_ID}:focus-visible { outline: 2px solid #e8ddd0; outline-offset: -2px; }
 
-    /* Search sits just left of Save Log and takes over its push-right margin. */
-    #${SEARCH_ID} {
+    /* Hide | Search | Save Log: the leftmost present one takes the push-right margin. */
+    #${HIDE_ID}, #${SEARCH_ID} {
       margin-left: auto; flex: 0 1 auto; min-width: 0;
       display: flex; align-items: stretch; border-left: 1px solid #5a1212;
     }
-    #${SEARCH_ID} + #${BTN_ID} { margin-left: 0; }
+    #${HIDE_ID} + #${SEARCH_ID}, #${SEARCH_ID} + #${BTN_ID}, #${HIDE_ID} + #${BTN_ID} { margin-left: 0; }
+    .pbn-lh-btn--active { color: #e0b84a !important; }
+
+    /* Hidden messages. Rules are off while picking, so hidden rows can be
+       seen (ghosted) and clicked again to bring them back. */
+    body:not(.pbn-hide-picking) .chat-container [role="article"].pbn-hidden,
+    body.pbn-hide-cat-whisper:not(.pbn-hide-picking) .chat-container [role="article"]:is(.pbn-cat-whisper, :has(.whisper-line, .auspex-whisper-line)),
+    body.pbn-hide-cat-system:not(.pbn-hide-picking) .chat-container [role="article"]:has(> p > span.text-orange-9:first-child),
+    body.pbn-hide-cat-ooc:not(.pbn-hide-picking) .chat-container [role="article"]:has(> p > span.text-blue:first-child) {
+      display: none !important;
+    }
+    body.pbn-hide-picking .chat-container [role="article"] { cursor: pointer; }
+    body.pbn-hide-picking .chat-container [role="article"]:hover { outline: 1px dashed #e0b84a99; outline-offset: -1px; }
+    body.pbn-hide-picking .chat-container [role="article"].pbn-hidden,
+    body.pbn-hide-picking.pbn-hide-cat-whisper .chat-container [role="article"]:is(.pbn-cat-whisper, :has(.whisper-line, .auspex-whisper-line)),
+    body.pbn-hide-picking.pbn-hide-cat-system .chat-container [role="article"]:has(> p > span.text-orange-9:first-child),
+    body.pbn-hide-picking.pbn-hide-cat-ooc .chat-container [role="article"]:has(> p > span.text-blue:first-child) {
+      opacity: .3; text-decoration: line-through;
+    }
+
+    .pbn-lh-menu {
+      position: fixed; z-index: 9000; display: flex; flex-direction: column;
+      min-width: 230px; padding: 4px 0;
+      background: #120a0a; border: 1px solid #5a1212; border-radius: 6px;
+      box-shadow: 0 8px 28px #000a; font-family: Georgia, 'Times New Roman', serif;
+    }
+    .pbn-lh-menu__head {
+      padding: 6px 16px 4px; color: #9a8a7a; font-size: .8rem;
+      text-transform: uppercase; letter-spacing: .8px;
+    }
+    .pbn-lh-menu label, .pbn-lh-item {
+      display: flex; align-items: center; gap: 10px; padding: 8px 16px; cursor: pointer;
+      font: inherit; font-size: 1rem; color: #c4b49a; text-align: left;
+      background: none; border: 0; width: 100%;
+    }
+    .pbn-lh-menu label:hover, .pbn-lh-item:hover:not(:disabled) { color: #e8ddd0; background: #5a121233; }
+    .pbn-lh-item:disabled { opacity: .45; cursor: default; }
+    .pbn-lh-item:focus-visible { outline: 2px solid #e0b84a; outline-offset: -2px; }
+    .pbn-lh-menu input { accent-color: #9e2b2b; width: 16px; height: 16px; margin: 0; }
+    .pbn-lh-sep { height: 1px; margin: 4px 0; background: #5a121299; }
     .pbn-ls-btn {
       flex: 0 0 auto; cursor: pointer; padding: 6px 12px; background: none; border: none;
       font-family: TMUnicorn, serif; font-size: .85rem; letter-spacing: .5px;
@@ -298,9 +338,10 @@
   const canHighlight = typeof Highlight === 'function' && !!(window.CSS && CSS.highlights);
   let searchState = null; // { rows: Element[], idx, current: Element|null }
 
+  // Rows currently shown (rows hidden via the Hide menu have no boxes).
   function chatRows() {
     const c = document.querySelector(CHAT_SELECTOR);
-    return c ? Array.from(c.querySelectorAll(ARTICLE_SELECTOR)) : [];
+    return c ? Array.from(c.querySelectorAll(ARTICLE_SELECTOR)).filter(r => r.getClientRects().length) : [];
   }
 
   // Ranges for every whitespace-insensitive occurrence of `needle` in `row`.
@@ -451,6 +492,175 @@
   }
 
   // --------------------------------------------------------------------------
+  // Hide. Temporarily hides chat messages (screenshots, backreading): quick
+  // filters for whole kinds of message, plus a picking mode to click single
+  // messages away. Display only — nothing is stored, the saved log is
+  // unaffected, and a reload or tab switch brings everything back.
+  //
+  // Filters are body classes driving CSS :has() rules on the rows' own
+  // markup. "X whispers to Y." / "A whisper brushes…" notices are plain
+  // [SYSTEM] lines, so those rows get a pbn-cat-whisper class by text.
+  // Picked rows get pbn-hidden. Vue leaves both alone: it only rewrites a
+  // row's class when its own class binding changes.
+  // --------------------------------------------------------------------------
+
+  const HIDE_CATS = [
+    ['whisper', 'Whispers'],
+    ['system', 'System messages'],
+    ['ooc', 'OOC & LOOC'],
+  ];
+  const WHISPER_RE = /\bwhispers to\b|A whisper brushes the edge of your awareness|catch the words meant only for another/i;
+  const tagged = new WeakSet();
+  let hideMenu = null;
+
+  // Tags rows as they're added (observer callbacks run before paint, so a
+  // filtered whisper never flashes up); the 1s sync tick re-attaches the
+  // observer if the chat container is ever replaced.
+  let tagObserver = null, tagContainer = null;
+
+  function tagWhispers() {
+    const c = document.querySelector(CHAT_SELECTOR);
+    if (!c) return;
+    c.querySelectorAll(ARTICLE_SELECTOR).forEach(row => {
+      if (tagged.has(row)) return;
+      tagged.add(row);
+      if (WHISPER_RE.test(row.textContent)) row.classList.add('pbn-cat-whisper');
+    });
+    if (c !== tagContainer) {
+      if (tagObserver) tagObserver.disconnect();
+      tagContainer = c;
+      tagObserver = new MutationObserver(tagWhispers);
+      tagObserver.observe(c, { childList: true });
+    }
+  }
+
+  const picking = () => document.body.classList.contains('pbn-hide-picking');
+  const hiddenCount = () => document.querySelectorAll(`${CHAT_SELECTOR} .pbn-hidden`).length;
+
+  function refreshHideButton() {
+    const btn = document.querySelector(`#${HIDE_ID} .pbn-lh-toggle`);
+    if (!btn) return;
+    const n = hiddenCount();
+    const cats = HIDE_CATS.filter(([k]) => document.body.classList.contains(`pbn-hide-cat-${k}`)).length;
+    const text = picking() ? 'Done' : n ? `Hide · ${n}` : 'Hide';
+    if (btn.textContent !== text) btn.textContent = text;
+    btn.classList.toggle('pbn-lh-btn--active', picking() || n > 0 || cats > 0);
+    btn.title = picking()
+      ? 'Click messages to hide or bring them back; click Done (or Esc) to finish'
+      : 'Temporarily hide chat messages';
+  }
+
+  function onPickClick(e) {
+    const row = e.target.closest(`${CHAT_SELECTOR} ${ARTICLE_SELECTOR}`);
+    if (!row) return;
+    e.preventDefault();
+    e.stopPropagation();
+    row.classList.toggle('pbn-hidden');
+    refreshHideButton();
+  }
+
+  function onPickKey(e) { if (e.key === 'Escape') stopPicking(); }
+
+  function startPicking() {
+    document.body.classList.add('pbn-hide-picking');
+    document.addEventListener('click', onPickClick, true);
+    document.addEventListener('keydown', onPickKey, true);
+    refreshHideButton();
+  }
+
+  function stopPicking() {
+    document.body.classList.remove('pbn-hide-picking');
+    document.removeEventListener('click', onPickClick, true);
+    document.removeEventListener('keydown', onPickKey, true);
+    refreshHideButton();
+  }
+
+  function closeHideMenu() {
+    if (!hideMenu) return;
+    hideMenu.remove();
+    hideMenu = null;
+    document.removeEventListener('mousedown', onHideOutside, true);
+    document.removeEventListener('keydown', onHideMenuKey, true);
+  }
+
+  function onHideOutside(e) {
+    if (hideMenu && !hideMenu.contains(e.target) && !e.target.closest(`#${HIDE_ID}`)) closeHideMenu();
+  }
+
+  function onHideMenuKey(e) { if (e.key === 'Escape') closeHideMenu(); }
+
+  function openHideMenu(anchor) {
+    const mk = (tag, props) => Object.assign(document.createElement(tag), props);
+    const menu = mk('div', { className: 'pbn-lh-menu' });
+    menu.setAttribute('role', 'menu');
+    menu.append(mk('div', { className: 'pbn-lh-menu__head', textContent: 'Hide messages' }));
+
+    HIDE_CATS.forEach(([key, label]) => {
+      const box = mk('input', { type: 'checkbox', checked: document.body.classList.contains(`pbn-hide-cat-${key}`) });
+      box.addEventListener('change', () => {
+        document.body.classList.toggle(`pbn-hide-cat-${key}`, box.checked);
+        refreshHideButton();
+      });
+      const l = mk('label', {});
+      l.append(box, label);
+      menu.append(l);
+    });
+
+    menu.append(mk('div', { className: 'pbn-lh-sep' }));
+    const pick = mk('button', { type: 'button', className: 'pbn-lh-item', textContent: 'Pick messages to hide…' });
+    pick.addEventListener('click', () => { closeHideMenu(); startPicking(); });
+    const n = hiddenCount();
+    const showAll = mk('button', { type: 'button', className: 'pbn-lh-item', textContent: `Show all hidden (${n})`, disabled: !n });
+    showAll.addEventListener('click', () => {
+      document.querySelectorAll(`${CHAT_SELECTOR} .pbn-hidden`).forEach(r => r.classList.remove('pbn-hidden'));
+      HIDE_CATS.forEach(([k]) => document.body.classList.remove(`pbn-hide-cat-${k}`));
+      closeHideMenu();
+      refreshHideButton();
+    });
+    showAll.title = 'Also turns the filters above off';
+    if (!n && HIDE_CATS.some(([k]) => document.body.classList.contains(`pbn-hide-cat-${k}`))) {
+      showAll.disabled = false;
+      showAll.textContent = 'Show everything';
+    }
+    menu.append(pick, showAll);
+
+    document.body.appendChild(menu);
+    const r = anchor.getBoundingClientRect();
+    menu.style.left = `${Math.min(Math.max(8, r.right - menu.offsetWidth), window.innerWidth - menu.offsetWidth - 8)}px`;
+    menu.style.top = `${r.bottom + 4}px`;
+    hideMenu = menu;
+    document.addEventListener('mousedown', onHideOutside, true);
+    document.addEventListener('keydown', onHideMenuKey, true);
+  }
+
+  function ensureHide() {
+    if (document.getElementById(HIDE_ID)) return;
+    const after = document.getElementById(SEARCH_ID) || document.getElementById(BTN_ID);
+    if (!after) return;
+    const wrap = Object.assign(document.createElement('div'), { id: HIDE_ID });
+    const toggle = Object.assign(document.createElement('button'), {
+      type: 'button', className: 'pbn-ls-btn pbn-ls-toggle pbn-lh-toggle', textContent: 'Hide',
+    });
+    toggle.setAttribute('aria-haspopup', 'menu');
+    toggle.addEventListener('mousedown', e => e.preventDefault());
+    toggle.addEventListener('click', () => {
+      if (picking()) { stopPicking(); return; }
+      if (hideMenu) closeHideMenu();
+      else openHideMenu(toggle);
+    });
+    wrap.append(toggle);
+    after.before(wrap);
+    refreshHideButton();
+  }
+
+  function resetHide() {
+    if (tagObserver) { tagObserver.disconnect(); tagObserver = null; tagContainer = null; }
+    stopPicking();
+    closeHideMenu();
+    HIDE_CATS.forEach(([k]) => document.body.classList.remove(`pbn-hide-cat-${k}`));
+  }
+
+  // --------------------------------------------------------------------------
   // Lifecycle. While on /play, a 1s tick keeps the hook pointed at the live
   // component (re-hooking if the page remounts without a URL change), falls
   // back to the DOM path if no component turns up, and re-adds the button if
@@ -464,6 +674,9 @@
   function sync() {
     ensureButton();
     ensureSearch();
+    ensureHide();
+    tagWhispers();
+    refreshHideButton();
 
     if (hooked && hooked.inst.isUnmounted) unhook();
     if (!hooked) {
@@ -499,6 +712,7 @@
     stopDomFallback();
     clearHits();
     searchState = null;
+    resetHide();
   }
 
   // Violentmonkey only evaluates @match on a real page load; this site's Vue
