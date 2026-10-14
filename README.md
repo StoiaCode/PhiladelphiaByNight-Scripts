@@ -173,6 +173,16 @@ Adds a **Save Log** button to the chat tab bar. Messages are captured to memory 
 
 Nothing is written to browser storage — the log lives in memory only and is gone when the tab closes. Messages already in the chat when the script loads are included too.
 
+### Search
+
+A **Search** button sits next to **Save Log**. Type to search the chat: the newest match scrolls to the middle of the chat, gets outlined, and every match is highlighted.
+
+- **Enter** — next older match · **Shift+Enter** — next newer match (or use ▲ / ▼). The counter reads e.g. `2 / 7`, counted from the newest.
+- **Esc** (or ✕) closes the search and clears the highlights.
+- Case and spacing don't matter, so `vergil says` finds lines where the game runs the name and "says," together.
+
+Search covers the messages currently in the chat. The game only keeps the last 500 on the page; anything older is still in your **Save Log** file.
+
 This script has no configurable options.
 
 ---

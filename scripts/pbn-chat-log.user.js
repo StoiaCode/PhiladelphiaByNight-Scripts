@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Chat Log
 // @namespace    stoia.red
-// @version      1.1.1
+// @version      1.2.0
 // @description  Records the RP chat as it arrives and saves the session as a plain-text file on demand.
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -32,6 +32,7 @@
   const CHAT_SELECTOR    = '.chat-container';
   const ARTICLE_SELECTOR = '[role="article"]';
   const BTN_ID           = 'pbn-log-btn';
+  const SEARCH_ID        = 'pbn-log-search';
   const FALLBACK_AFTER_MS = 5000;
 
   const sessionStart = new Date();
@@ -231,6 +232,42 @@
     }
     #${BTN_ID}:hover { color: #e8ddd0; background: #5a121233; }
     #${BTN_ID}:focus-visible { outline: 2px solid #e8ddd0; outline-offset: -2px; }
+
+    /* Search sits just left of Save Log and takes over its push-right margin. */
+    #${SEARCH_ID} {
+      margin-left: auto; flex: 0 1 auto; min-width: 0;
+      display: flex; align-items: stretch; border-left: 1px solid #5a1212;
+    }
+    #${SEARCH_ID} + #${BTN_ID} { margin-left: 0; }
+    .pbn-ls-btn {
+      flex: 0 0 auto; cursor: pointer; padding: 6px 12px; background: none; border: none;
+      font-family: TMUnicorn, serif; font-size: .85rem; letter-spacing: .5px;
+      color: #c4b49a; transition: color .15s, background .15s;
+    }
+    .pbn-ls-btn:hover:not(:disabled) { color: #e8ddd0; background: #5a121233; }
+    .pbn-ls-btn:disabled { opacity: .35; cursor: default; }
+    .pbn-ls-btn:focus-visible { outline: 2px solid #e8ddd0; outline-offset: -2px; }
+    .pbn-ls-toggle { padding: 6px 16px; }
+    .pbn-ls-box { display: none; align-items: center; min-width: 0; }
+    #${SEARCH_ID}.pbn-ls--open .pbn-ls-box { display: flex; }
+    #${SEARCH_ID}.pbn-ls--open .pbn-ls-toggle { display: none; }
+    .pbn-ls-input {
+      width: 190px; min-width: 80px; margin: 3px 4px 3px 8px; padding: 3px 8px;
+      background: #0d0707; color: #e8ddd0; border: 1px solid #5a1212; border-radius: 4px;
+      font-family: Georgia, 'Times New Roman', serif; font-size: .95rem;
+    }
+    .pbn-ls-input:focus { outline: none; border-color: #9a2020; }
+    .pbn-ls-count {
+      min-width: 4.5em; padding: 0 4px; text-align: center; white-space: nowrap;
+      font-family: Georgia, 'Times New Roman', serif; font-size: .9rem; color: #9a8a7a;
+    }
+
+    ::highlight(pbn-log-search) { background-color: #e0b84a40; }
+    ::highlight(pbn-log-search-current) { background-color: #e0b84a; color: #120a0a; }
+    .chat-container .pbn-log-hit {
+      outline: 1px solid #e0b84a99; outline-offset: -1px; background: #e0b84a14;
+      border-radius: 3px;
+    }
   `;
   document.head.appendChild(style);
 
@@ -249,6 +286,171 @@
   }
 
   // --------------------------------------------------------------------------
+  // Search. Searches the messages currently in the chat (the site keeps the
+  // last 500 on the page; older ones only exist in the saved log), scrolls a
+  // match to the middle of the chat and highlights it. Matching ignores case
+  // and whitespace, because the site separates names from "says," etc. with
+  // CSS margins rather than spaces. Highlighting uses the CSS Custom
+  // Highlight API, so the site's chat HTML is never modified; browsers
+  // without it still get the outlined row.
+  // --------------------------------------------------------------------------
+
+  const canHighlight = typeof Highlight === 'function' && !!(window.CSS && CSS.highlights);
+  let searchState = null; // { rows: Element[], idx, current: Element|null }
+
+  function chatRows() {
+    const c = document.querySelector(CHAT_SELECTOR);
+    return c ? Array.from(c.querySelectorAll(ARTICLE_SELECTOR)) : [];
+  }
+
+  // Ranges for every whitespace-insensitive occurrence of `needle` in `row`.
+  function matchRanges(row, needle) {
+    const chars = []; // [textNode, offset] for each non-whitespace character
+    let hay = '';
+    const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const t = n.nodeValue;
+      for (let i = 0; i < t.length; i++) {
+        if (/\s/.test(t[i])) continue;
+        chars.push([n, i]);
+        hay += t[i];
+      }
+    }
+    hay = hay.toLowerCase();
+    const ranges = [];
+    for (let at = hay.indexOf(needle); at !== -1; at = hay.indexOf(needle, at + needle.length)) {
+      const [sn, so] = chars[at];
+      const [en, eo] = chars[at + needle.length - 1];
+      const r = document.createRange();
+      r.setStart(sn, so);
+      r.setEnd(en, eo + 1);
+      ranges.push(r);
+    }
+    return ranges;
+  }
+
+  function clearHits() {
+    if (canHighlight) {
+      CSS.highlights.delete('pbn-log-search');
+      CSS.highlights.delete('pbn-log-search-current');
+    }
+    document.querySelectorAll('.pbn-log-hit').forEach(r => r.classList.remove('pbn-log-hit'));
+  }
+
+  function scrollRowIntoView(row) {
+    const c = document.querySelector(CHAT_SELECTOR);
+    if (!c) return;
+    const offset = () => {
+      const cr = c.getBoundingClientRect(), rr = row.getBoundingClientRect();
+      return rr.top - cr.top - (cr.height - rr.height) / 2;
+    };
+    c.scrollBy({ top: offset(), behavior: 'smooth' });
+    // Backstop: if the smooth scroll didn't happen (some browsers skip the
+    // animation in background/throttled tabs), jump there directly.
+    setTimeout(() => {
+      if (row.isConnected && Math.abs(offset()) > c.clientHeight / 2) c.scrollTop += offset();
+    }, 700);
+  }
+
+  // Re-run the search against the current chat. dir: 0 = jump to the newest
+  // match, -1 = next older, +1 = next newer (relative to the current match).
+  function runSearch(box, dir) {
+    const needle = box.input.value.replace(/\s+/g, '').toLowerCase();
+    clearHits();
+    if (!needle) { searchState = null; box.count.textContent = ''; setNav(box, false); return; }
+
+    const hits = []; // { row, ranges }
+    chatRows().forEach(row => {
+      const ranges = matchRanges(row, needle);
+      if (ranges.length) hits.push({ row, ranges });
+    });
+    if (!hits.length) {
+      searchState = null;
+      box.count.textContent = 'none';
+      box.count.title = 'No matches among the messages on screen. The site only keeps the last 500; older lines are in Save Log.';
+      setNav(box, false);
+      return;
+    }
+
+    let idx = hits.length - 1;
+    const prev = searchState?.current;
+    const prevIdx = prev ? hits.findIndex(h => h.row === prev) : -1;
+    if (dir && prevIdx !== -1) idx = Math.min(hits.length - 1, Math.max(0, prevIdx + dir));
+
+    const cur = hits[idx];
+    searchState = { idx, current: cur.row };
+    if (canHighlight) {
+      CSS.highlights.set('pbn-log-search', new Highlight(...hits.flatMap(h => h.ranges)));
+      CSS.highlights.set('pbn-log-search-current', new Highlight(...cur.ranges));
+    }
+    cur.row.classList.add('pbn-log-hit');
+    scrollRowIntoView(cur.row);
+
+    // Counted from the newest, since searching works upward through the chat.
+    box.count.textContent = `${hits.length - idx} / ${hits.length}`;
+    box.count.title = 'Enter: older match · Shift+Enter: newer match · Esc: close';
+    setNav(box, true, idx > 0, idx < hits.length - 1);
+  }
+
+  function setNav(box, any, older = false, newer = false) {
+    box.older.disabled = !any || !older;
+    box.newer.disabled = !any || !newer;
+  }
+
+  function ensureSearch() {
+    if (document.getElementById(SEARCH_ID)) return;
+    const logBtn = document.getElementById(BTN_ID);
+    if (!logBtn) return;
+
+    const mk = (tag, props) => Object.assign(document.createElement(tag), props);
+    const wrap = mk('div', { id: SEARCH_ID });
+    const toggle = mk('button', { type: 'button', className: 'pbn-ls-btn pbn-ls-toggle', textContent: 'Search', title: 'Search the chat' });
+    const boxEl = mk('span', { className: 'pbn-ls-box' });
+    const input = mk('input', { type: 'text', className: 'pbn-ls-input', placeholder: 'Search chat…', spellcheck: false });
+    input.setAttribute('aria-label', 'Search the chat');
+    const count = mk('span', { className: 'pbn-ls-count' });
+    count.setAttribute('aria-live', 'polite');
+    const older = mk('button', { type: 'button', className: 'pbn-ls-btn', textContent: '▲', title: 'Older match (Enter)' });
+    const newer = mk('button', { type: 'button', className: 'pbn-ls-btn', textContent: '▼', title: 'Newer match (Shift+Enter)' });
+    const close = mk('button', { type: 'button', className: 'pbn-ls-btn', textContent: '✕', title: 'Close search (Esc)' });
+    older.setAttribute('aria-label', 'Older match');
+    newer.setAttribute('aria-label', 'Newer match');
+    close.setAttribute('aria-label', 'Close search');
+    boxEl.append(input, count, older, newer, close);
+    wrap.append(toggle, boxEl);
+
+    const box = { input, count, older, newer };
+    setNav(box, false);
+
+    function open() { wrap.classList.add('pbn-ls--open'); input.focus(); input.select(); }
+    function shut() {
+      wrap.classList.remove('pbn-ls--open');
+      clearHits();
+      searchState = null;
+      count.textContent = '';
+      toggle.focus();
+    }
+
+    let debounce = null;
+    toggle.addEventListener('click', open);
+    input.addEventListener('input', () => {
+      clearTimeout(debounce);
+      searchState = null; // a new query starts again from the newest match
+      debounce = setTimeout(() => runSearch(box, 0), 150);
+    });
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); clearTimeout(debounce); runSearch(box, searchState ? (e.shiftKey ? 1 : -1) : 0); }
+      else if (e.key === 'Escape') { e.preventDefault(); shut(); }
+    });
+    older.addEventListener('click', () => runSearch(box, -1));
+    newer.addEventListener('click', () => runSearch(box, 1));
+    close.addEventListener('click', shut);
+    [toggle, older, newer, close].forEach(b => b.addEventListener('mousedown', e => e.preventDefault()));
+
+    logBtn.before(wrap);
+  }
+
+  // --------------------------------------------------------------------------
   // Lifecycle. While on /play, a 1s tick keeps the hook pointed at the live
   // component (re-hooking if the page remounts without a URL change), falls
   // back to the DOM path if no component turns up, and re-adds the button if
@@ -261,6 +463,7 @@
 
   function sync() {
     ensureButton();
+    ensureSearch();
 
     if (hooked && hooked.inst.isUnmounted) unhook();
     if (!hooked) {
@@ -294,6 +497,8 @@
     if (tick) { clearInterval(tick); tick = null; }
     unhook();
     stopDomFallback();
+    clearHits();
+    searchState = null;
   }
 
   // Violentmonkey only evaluates @match on a real page load; this site's Vue
