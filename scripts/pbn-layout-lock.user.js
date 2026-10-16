@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Layout Lock
 // @namespace    stoia.red
-// @version      1.3.1
+// @version      1.3.2
 // @description  Locks the play page to viewport height — the chat box shrinks to fit, no page-level scrollbar.
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -12,6 +12,17 @@
 
 (function () {
   'use strict';
+
+  // PbN Toolkit coexistence: if the toolkit is installed with this feature
+  // switched on, it handles it and this script steps aside. The toolkit
+  // publishes its active features on <html data-pbn-toolkit> before any
+  // other userscript runs; data-pbn-legacy-layout-lock tells its panel what
+  // this script did.
+  if ((document.documentElement.getAttribute('data-pbn-toolkit') || '').split(' ').includes('layout-lock')) {
+    document.documentElement.setAttribute('data-pbn-legacy-layout-lock', 'deferred');
+    return;
+  }
+  document.documentElement.setAttribute('data-pbn-legacy-layout-lock', 'running');
 
   // Quasar sets min-height on .q-layout and main.q-page via inline styles based
   // on content size, which makes the page taller than the viewport and forces a

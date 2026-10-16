@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Compass Tools
 // @namespace    stoia.red
-// @version      1.3.1
+// @version      1.3.2
 // @description  Shows destination room names on compass hover, adds a Walk/Look/Search mode toggle, and an always-visible Up/Down bar under the compass.
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -22,6 +22,17 @@
     document.documentElement.dataset.pbnScripts = '1';
     return;
   }
+
+  // PbN Toolkit coexistence: if the toolkit is installed with this feature
+  // switched on, it handles it and this script steps aside. The toolkit
+  // publishes its active features on <html data-pbn-toolkit> before any
+  // other userscript runs; data-pbn-legacy-compass-tools tells its panel
+  // what this script did.
+  if ((document.documentElement.getAttribute('data-pbn-toolkit') || '').split(' ').includes('compass-tools')) {
+    document.documentElement.setAttribute('data-pbn-legacy-compass-tools', 'deferred');
+    return;
+  }
+  document.documentElement.setAttribute('data-pbn-legacy-compass-tools', 'running');
 
   // Maps button label -> full direction word sent in commands.
   const DIR = {

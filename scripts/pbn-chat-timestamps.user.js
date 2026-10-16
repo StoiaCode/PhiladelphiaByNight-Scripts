@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Chat Timestamps
 // @namespace    stoia.red
-// @version      1.0.2
+// @version      1.0.3
 // @description  Shows an HH:MM timestamp in front of every chat message, in the chat's own font.
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -12,6 +12,17 @@
 
 (function () {
   'use strict';
+
+  // PbN Toolkit coexistence: if the toolkit is installed with this feature
+  // switched on, it handles it and this script steps aside. The toolkit
+  // publishes its active features on <html data-pbn-toolkit> before any
+  // other userscript runs; data-pbn-legacy-chat-timestamps tells its panel what
+  // this script did.
+  if ((document.documentElement.getAttribute('data-pbn-toolkit') || '').split(' ').includes('chat-timestamps')) {
+    document.documentElement.setAttribute('data-pbn-legacy-chat-timestamps', 'deferred');
+    return;
+  }
+  document.documentElement.setAttribute('data-pbn-legacy-chat-timestamps', 'running');
 
   const CHAT_SELECTOR    = '.chat-container';
   const ARTICLE_SELECTOR = '[role="article"]';

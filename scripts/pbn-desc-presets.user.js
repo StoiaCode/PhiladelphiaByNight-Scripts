@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Description Presets
 // @namespace    stoia.red
-// @version      1.0.0
+// @version      1.0.1
 // @description  Save /setdesc looks (short/full description, arrive/depart messages) as per-character presets and swap between them in one click.
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -12,6 +12,17 @@
 
 (function () {
   'use strict';
+
+  // PbN Toolkit coexistence: if the toolkit is installed with this feature
+  // switched on, it handles it and this script steps aside. The toolkit
+  // publishes its active features on <html data-pbn-toolkit> before any
+  // other userscript runs; data-pbn-legacy-desc-presets tells its panel what
+  // this script did.
+  if ((document.documentElement.getAttribute('data-pbn-toolkit') || '').split(' ').includes('desc-presets')) {
+    document.documentElement.setAttribute('data-pbn-legacy-desc-presets', 'deferred');
+    return;
+  }
+  document.documentElement.setAttribute('data-pbn-legacy-desc-presets', 'running');
 
   // Two entry points:
   //  1. Inside the /setdesc dialog ("Define Your Presence"): a Presets row to

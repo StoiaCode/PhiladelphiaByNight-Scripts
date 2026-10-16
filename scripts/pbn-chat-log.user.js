@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Chat Log
 // @namespace    stoia.red
-// @version      1.3.0
+// @version      1.3.1
 // @description  Records the RP chat as it arrives and saves the session as a plain-text file on demand.
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -12,6 +12,17 @@
 
 (function () {
   'use strict';
+
+  // PbN Toolkit coexistence: if the toolkit is installed with this feature
+  // switched on, it handles it and this script steps aside. The toolkit
+  // publishes its active features on <html data-pbn-toolkit> before any
+  // other userscript runs; data-pbn-legacy-chat-log tells its panel what
+  // this script did.
+  if ((document.documentElement.getAttribute('data-pbn-toolkit') || '').split(' ').includes('chat-log')) {
+    document.documentElement.setAttribute('data-pbn-legacy-chat-log', 'deferred');
+    return;
+  }
+  document.documentElement.setAttribute('data-pbn-legacy-chat-log', 'running');
 
   // How messages are recorded
   // -------------------------

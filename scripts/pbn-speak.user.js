@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Language Switcher
 // @namespace    stoia.red
-// @version      1.0.1
+// @version      1.0.2
 // @description  Per-character list of known languages with one-click /speak switching and a "next line only" [language] prefix.
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -12,6 +12,17 @@
 
 (function () {
   'use strict';
+
+  // PbN Toolkit coexistence: if the toolkit is installed with this feature
+  // switched on, it handles it and this script steps aside. The toolkit
+  // publishes its active features on <html data-pbn-toolkit> before any
+  // other userscript runs; data-pbn-legacy-speak tells its panel what
+  // this script did.
+  if ((document.documentElement.getAttribute('data-pbn-toolkit') || '').split(' ').includes('speak')) {
+    document.documentElement.setAttribute('data-pbn-legacy-speak', 'deferred');
+    return;
+  }
+  document.documentElement.setAttribute('data-pbn-legacy-speak', 'running');
 
   // The game has no command that lists which languages a character has
   // claimed, so the list is kept here, per character, and maintained by the

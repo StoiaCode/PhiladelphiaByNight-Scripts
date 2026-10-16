@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Command Buttons
 // @namespace    stoia.red
-// @version      1.4.0
+// @version      1.4.1
 // @description  Adds quick-command buttons (/ooc /say /emote /pose ...) above the MUSH input box. Buttons are editable in-page via the userscript menu (no script editing needed).
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -14,6 +14,36 @@
 
 (function () {
   'use strict';
+
+  // ----------------------------------------------------------------------
+  // PbN Toolkit coexistence and migration.
+  //
+  // The toolkit can't read this script's userscript-manager storage (it's
+  // private to each script), so the button lists are copied into the site's
+  // own storage under the keys the toolkit reads. While this script is the
+  // one in charge, the copy is kept current; once the toolkit has taken
+  // over, it's only filled if still empty, so toolkit edits aren't undone.
+  //
+  // If the toolkit is installed with Command Buttons switched on, this
+  // script then steps aside (data-pbn-legacy-command-buttons tells the
+  // toolkit's panel what happened).
+  // ----------------------------------------------------------------------
+
+  const TOOLKIT_FEATURES = (document.documentElement.getAttribute('data-pbn-toolkit') || '').split(' ');
+  const TOOLKIT_HANDLES_THIS = TOOLKIT_FEATURES.includes('command-buttons');
+  try {
+    if (typeof GM_getValue === 'function' && (!TOOLKIT_HANDLES_THIS || localStorage.getItem('pbn-commands') === null)) {
+      const shared = GM_getValue('pbn_commands', '');
+      const byChar = GM_getValue('pbn_commands_by_char', '');
+      if (shared) localStorage.setItem('pbn-commands', shared);
+      if (byChar) localStorage.setItem('pbn-commands-by-char', byChar);
+    }
+  } catch (e) { /* storage unavailable; nothing to migrate */ }
+  if (TOOLKIT_HANDLES_THIS) {
+    document.documentElement.setAttribute('data-pbn-legacy-command-buttons', 'deferred');
+    return;
+  }
+  document.documentElement.setAttribute('data-pbn-legacy-command-buttons', 'running');
 
   // ----------------------------------------------------------------------
   // CONFIG
@@ -601,11 +631,72 @@
     setInterval(check, 500);
   }
 
+  // ----------------------------------------------------------------------
+  // One gentle pointer to the PbN Toolkit: a single dismissible line in the
+  // play page's Settings tab, only when the toolkit isn't installed at all.
+  // Never a popup; gone for good once dismissed.
+  // ----------------------------------------------------------------------
+
+  const HINT_DISMISSED_KEY = 'pbn-toolkit-hint-dismissed';
+  const TOOLKIT_URL = 'https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-toolkit.user.js';
+  const hintStyle = document.createElement('style');
+  hintStyle.textContent = `
+    .pbn-tk-hint__text { color: #c4b49a; font-size: .95rem; margin: 6px 0; }
+    .pbn-tk-hint__row { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+    .pbn-tk-hint__row a, .pbn-tk-hint__row button {
+      cursor: pointer; padding: 4px 12px; border-radius: 4px; font: inherit; font-size: .95rem; text-decoration: none;
+      background: #120a0a; color: #c4b49a; border: 1px solid #9e2b2b80;
+    }
+    .pbn-tk-hint__row a { background: #9e2b2b; color: #f3e6cf; border-color: #9e2b2b; }
+    .pbn-tk-hint__row a:hover { background: #b33434; }
+    .pbn-tk-hint__row button:hover { color: #e8dcc0; background: #5a121233; }
+  `;
+  document.head.appendChild(hintStyle);
+
+  function ensureToolkitHint() {
+    if (document.documentElement.hasAttribute('data-pbn-toolkit')) return;
+    try { if (localStorage.getItem(HINT_DISMISSED_KEY)) return; } catch (e) { return; }
+    const tab = document.querySelector('.settings-tab');
+    if (!tab || tab.querySelector('.pbn-tk-hint')) return;
+
+    const copyScope = (from, to) => {
+      if (from) for (const a of from.attributes) if (a.name.startsWith('data-v-')) to.setAttribute(a.name, '');
+    };
+    const section = document.createElement('div');
+    section.className = 'settings-filter-section pbn-tk-hint';
+    copyScope(tab.querySelector('.settings-filter-section') || tab, section);
+    const divider = document.createElement('div');
+    divider.className = 'settings-filter-divider';
+    divider.textContent = 'PbN Toolkit';
+    copyScope(tab.querySelector('.settings-filter-divider') || tab, divider);
+    const text = document.createElement('div');
+    text.className = 'pbn-tk-hint__text';
+    text.textContent = 'All the PbN scripts in one install, each switchable, with a settings panel. ' +
+      'Your current scripts keep working either way, and your button lists carry over.';
+    const install = document.createElement('a');
+    install.href = TOOLKIT_URL;
+    install.target = '_blank';
+    install.rel = 'noopener';
+    install.textContent = 'Install PbN Toolkit';
+    const dismiss = document.createElement('button');
+    dismiss.type = 'button';
+    dismiss.textContent = 'Dismiss';
+    dismiss.addEventListener('click', () => {
+      try { localStorage.setItem(HINT_DISMISSED_KEY, '1'); } catch (e) { /* ignore */ }
+      section.remove();
+    });
+    const row = document.createElement('div');
+    row.className = 'pbn-tk-hint__row';
+    row.append(install, dismiss);
+    section.append(divider, text, row);
+    tab.append(section);
+  }
+
   let observer = null;
   function enter() {
     if (observer) return;
     // SPA: the input mounts/unmounts on navigation, so keep checking.
-    observer = new MutationObserver(() => mount());
+    observer = new MutationObserver(() => { mount(); ensureToolkitHint(); });
     observer.observe(document.body, { childList: true, subtree: true });
     mount();
   }

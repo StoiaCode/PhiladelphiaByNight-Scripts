@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Typing Indicator De-Shift
 // @namespace    stoia.red
-// @version      1.6.1
+// @version      1.6.2
 // @description  Stops the "X is typing" indicator from nudging the command input. Floats it above the box instead.
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -12,6 +12,17 @@
 
 (function () {
   'use strict';
+
+  // PbN Toolkit coexistence: if the toolkit is installed with this feature
+  // switched on, it handles it and this script steps aside. The toolkit
+  // publishes its active features on <html data-pbn-toolkit> before any
+  // other userscript runs; data-pbn-legacy-typing-indicator tells its panel what
+  // this script did.
+  if ((document.documentElement.getAttribute('data-pbn-toolkit') || '').split(' ').includes('typing-indicator')) {
+    document.documentElement.setAttribute('data-pbn-legacy-typing-indicator', 'deferred');
+    return;
+  }
+  document.documentElement.setAttribute('data-pbn-legacy-typing-indicator', 'running');
 
   // true  -> hide the indicator entirely (simplest, zero shift, lose the cue)
   // false -> keep it visible but float it so it never moves the input

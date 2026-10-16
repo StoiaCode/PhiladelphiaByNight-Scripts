@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Character Cards
 // @namespace    stoia.red
-// @version      1.2.0
+// @version      1.2.1
 // @description  Reorder your character cards, choose how many appear per row, and tidy recast/leave/delete into an Options menu on the My Characters page.
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-start
@@ -12,6 +12,17 @@
 
 (function () {
   'use strict';
+
+  // PbN Toolkit coexistence: if the toolkit is installed with this feature
+  // switched on, it handles it and this script steps aside. The toolkit
+  // publishes its active features on <html data-pbn-toolkit> before any
+  // other userscript runs; data-pbn-legacy-character-cards tells its panel what
+  // this script did.
+  if ((document.documentElement.getAttribute('data-pbn-toolkit') || '').split(' ').includes('character-cards')) {
+    document.documentElement.setAttribute('data-pbn-legacy-character-cards', 'deferred');
+    return;
+  }
+  document.documentElement.setAttribute('data-pbn-legacy-character-cards', 'running');
 
   // The My Characters page lives at /vtm/my_characters, reached via Vue
   // Router pushState, so @match is sitewide and activation is gated on that
