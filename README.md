@@ -14,8 +14,35 @@ A userscript manager browser extension:
 
 ## Installation
 
-With a userscript manager installed, click a script's raw link below. The
-manager will open an install screen — review it and click **Install**.
+With a userscript manager installed, click a raw link below. The manager
+will open an install screen — review it and click **Install**.
+
+### Recommended: PbN Toolkit (everything in one)
+
+**[`pbn-toolkit.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-toolkit.user.js)**
+contains every feature described below in a single install. Each feature can
+be switched on or off, and their settings live in one panel: on the play
+page open the in-game **Settings** tab and click **Open PbN Toolkit** (or
+press **Alt+Shift+T** anywhere on the site).
+
+- **Already using the separate scripts?** Install the toolkit alongside them.
+  For every feature the toolkit has switched on, the separate script steps
+  aside automatically, so nothing shows up twice. Your saved settings carry
+  over (button lists, description presets, languages, card order); the
+  toolkit's panel tells you which separate scripts you can now uninstall.
+- **Changes in the panel** (switching features, their settings) apply after
+  a page reload; the panel offers a **Reload now** button.
+- **Export / Import** in the panel backs up or moves everything the toolkit
+  stores — useful because it's kept in this browser's site storage, which
+  clearing the site's data would wipe.
+
+New features are added to the toolkit.
+
+### The separate scripts
+
+These still work and still get fixes, so there's no need to switch if
+they're doing what you want. Each one stands down by itself if the toolkit
+is installed with that feature switched on.
 
 | Script | Install |
 | ------ | ------- |
