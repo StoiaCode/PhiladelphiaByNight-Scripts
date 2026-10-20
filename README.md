@@ -36,7 +36,8 @@ press **Alt+Shift+T** anywhere on the site).
   stores — useful because it's kept in this browser's site storage, which
   clearing the site's data would wipe.
 
-New features are added to the toolkit.
+New features are added to the toolkit, and some exist only there (see
+[Personal Names](#personal-names-toolkit-only)).
 
 ### The separate scripts
 
@@ -337,6 +338,36 @@ The game has no command that lists which languages a character has claimed. So t
 The current language only changes when the game confirms it, so if a switch is refused the badge stays truthful. Only the game's own system lines count; another player quoting those phrases in chat doesn't affect anything.
 
 The list is stored per browser/device. This script has no configurable options.
+
+---
+
+## Personal Names (toolkit only)
+
+Give people your own names. Someone you only know as *"A short beefcake of a man"* introduces himself as Arsenije: click his short desc in the chat, type the name, and from then on he shows up as **Arsenije** wherever the game names him. If he re-introduces himself as Count Fabulous next week, click again and rename him.
+
+- **Where it applies** — only where the game puts a name, never in what people say:
+  - the speaker of says and emotes
+  - roll cards
+  - the **You see:** list
+  - **You look at …**
+  - "Among them, …" when peering into a room
+  - `[SYSTEM]` arrival and departure lines
+- **Exact matches.** A name is tied to the exact name or short desc the game shows (capitals don't matter). If someone changes their short desc, they're a stranger again until you name the new one.
+- **Per character.** Each of your characters has their own names, so your Camarilla character doesn't recognise the people your Sabbat character met.
+- **You can tell it's yours.** Your names have a dotted gold underline and a small ✦. Hover one to see what the game actually shows.
+
+Clicking a name opens a small menu:
+
+- **Name this person / You call them** — type the name and press Enter. Clearing the field and saving removes it.
+- **↺ Back to "…"** — the last few names you gave this person, one click to switch back.
+- **Show the game's text for them** — turns your name off for just this person without forgetting it.
+- **Forget this name.**
+
+A **badge icon** by the command box flips *everything* between your names and the game's text, which is handy right before a screenshot. It's gold while your names are showing. **Right-click** it to see every name you've given on this character (also under **Your names…** in the toolkit panel).
+
+**Chat Log:** Search finds people under either name. **Save Log** writes the game's text by default; switch *Save Log writes* to *my names* in the toolkit panel to get your names in the file instead.
+
+Names are stored per browser/device and included in the toolkit's Export/Import.
 
 ---
 

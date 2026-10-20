@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.0.0
+// @version      1.1.0
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -22,7 +22,7 @@
     return;
   }
 
-  const TK_VERSION = '1.0.0';
+  const TK_VERSION = '1.1.0';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -745,17 +745,20 @@
       const fmtTs = d => `${fmtDate(d)} ${fmtTime(d)}`;
 
       // The site separates name/"says," etc. with CSS margins, not spaces.
-      function htmlToText(html) {
+      // Personal Names spans go back to the game's text; withNames puts your
+      // names in instead.
+      function htmlToText(html, withNames = false) {
         const tpl = document.createElement('template');
         tpl.innerHTML = html;
         const root = tpl.content;
+        namesApi?.prepareLogCopy(root, withNames);
         root.querySelectorAll('[class*="q-ml-"], [class*="q-mx-"], [class*="q-px-"], [class*="q-pl-"]').forEach(n => n.before(' '));
         root.querySelectorAll('[class*="q-mr-"], [class*="q-mx-"], [class*="q-px-"], [class*="q-pr-"]').forEach(n => n.after(' '));
         root.querySelectorAll('br, p, div, li, tr').forEach(n => { n.before(' '); n.after(' '); });
         return root.textContent.replace(/\s+/g, ' ').trim();
       }
 
-      const record = (text, ts) => { if (text) entries.push({ ts, text }); };
+      const record = (text, ts, html) => { if (text) entries.push({ ts, text, html }); };
 
       function msgTimestamp(m) {
         const t = m.timestamp;
@@ -769,14 +772,15 @@
         if (loggedMsgs.has(raw)) return;
         loggedMsgs.add(raw);
         if (m.isHistory && /^--.*--$/.test((m.text || '').trim())) return; // replay markers
-        const text = htmlToText(m.html || m.text || '');
+        const html = m.html || m.text || '';
+        const text = htmlToText(html);
         const serverTs = msgTimestamp(m);
         if (serverTs) {
           const key = `${serverTs.getTime()}|${text}`; // skip history replays already logged
           if (seenKeys.has(key)) return;
           seenKeys.add(key);
         }
-        record(text, serverTs || new Date());
+        record(text, serverTs || new Date(), html);
       }
 
       function drain(list) {
@@ -796,7 +800,7 @@
       function unhook() { if (hooked) { hooked.stop(); hooked = null; } }
 
       let chatObserver = null, observedContainer = null;
-      function captureEl(row, ts) { if (seenEls.has(row)) return; seenEls.add(row); record(htmlToText(row.innerHTML), ts || new Date()); }
+      function captureEl(row, ts) { if (seenEls.has(row)) return; seenEls.add(row); const html = row.innerHTML; record(htmlToText(html), ts || new Date(), html); }
       function startDomFallback() {
         const cont = document.querySelector(CHAT);
         if (!cont || cont === observedContainer) return;
@@ -815,14 +819,18 @@
 
       function saveLog() {
         if (!entries.length) return;
+        // Lines are kept as recorded (game text); with Personal Names set to
+        // "my names" they're rebuilt from their HTML with the current names.
+        const mine = !!namesApi?.writesMine();
         const header = [
           'Philadelphia by Night — Chat Log',
           `Session started : ${fmtTs(sessionStart)}`,
           `Saved           : ${fmtTs(new Date())}`,
           `Messages        : ${entries.length}`,
+          mine ? 'Names           : your own (Personal Names)' : null,
           '─'.repeat(64), '',
-        ].join('\n');
-        const body = entries.map(e => `[${fmtTs(e.ts)}] ${e.text}`).join('\n');
+        ].filter(l => l != null).join('\n');
+        const body = entries.map(e => `[${fmtTs(e.ts)}] ${mine && e.html ? htmlToText(e.html, true) : e.text}`).join('\n');
         const url = URL.createObjectURL(new Blob([header + body], { type: 'text/plain' }));
         const a = c.el('a', { href: url, download: `pbn-log-${fmtDate(sessionStart)}-${fmtTime(sessionStart).replace(/:/g, '')}.txt` });
         a.click();
@@ -909,6 +917,14 @@
           r.setStart(sn, so); r.setEnd(en, eo + 1);
           ranges.push(r);
         }
+        // Personal Names: a name shown as yours also matches the game's text.
+        row.querySelectorAll('.pbn-nm[data-pbn-nm-orig]').forEach(s => {
+          const orig = s.dataset.pbnNmOrig.replace(/\s+/g, '').toLowerCase();
+          if (!orig.includes(needle) || s.textContent.replace(/\s+/g, '').toLowerCase().includes(needle)) return;
+          const r = document.createRange();
+          r.selectNodeContents(s);
+          ranges.push(r);
+        });
         return ranges;
       }
       function clearHits() {
@@ -1976,6 +1992,336 @@
   });
 
   // ==========================================================================
+  // MODULE: Personal Names
+  // ==========================================================================
+
+  // Set while Personal Names runs; Chat Log asks it whether (and how) to put
+  // your names into a saved log.
+  let namesApi = null;
+
+  defineModule({
+    id: 'names',
+    name: 'Personal Names',
+    description: 'Give people your own names: click a name or short desc in the chat to name them. Exact matches only, kept per character.',
+    note: "Your names get a dotted underline and a ✦; hover one to see what the game shows. The badge icon by the command box flips between your names and the game's text (right-click it for the list).",
+    settings: [
+      { key: 'log', label: 'Save Log writes', type: 'select', default: 'game',
+        options: [['game', "the game's text"], ['mine', 'my names']] },
+    ],
+    actions: [{ label: 'Your names…', run: () => namesApi?.openList() }],
+    start(c) {
+      const KEY = 'pbn-names';       // { [character]: { [lowercased game text]: { orig, name, was[], off } } }
+      const VIEW_KEY = 'pbn-names-view'; // 'mine' | 'game'
+      const MAX_WAS = 5;
+      const CHAT = '.chat-container';
+      const ROW = '[role="article"]';
+      const NM = 'pbn-nm';
+      const norm = s => String(s || '').replace(/\s+/g, ' ').trim();
+      const keyOf = s => norm(s).toLowerCase();
+      const loadAll = () => { try { return JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { return {}; } };
+      const loadView = () => (localStorage.getItem(VIEW_KEY) === 'game' ? 'game' : 'mine');
+
+      let book = {}, bookChar = null, view = loadView();
+      function loadBook() { bookChar = c.getCharName() || 'default'; book = loadAll()[bookChar] || {}; }
+      function update(fn) {
+        const all = loadAll();
+        const b = all[bookChar] || (all[bookChar] = {});
+        fn(b);
+        if (!Object.keys(b).length) delete all[bookChar];
+        localStorage.setItem(KEY, JSON.stringify(all));
+        book = b;
+        refreshAll();
+      }
+      function setName(orig, name) {
+        name = norm(name);
+        update(b => {
+          const k = keyOf(orig), e = b[k];
+          if (!name) { delete b[k]; return; }
+          if (e && e.name === name) { e.off = false; return; }
+          const was = e ? [e.name, ...(e.was || [])].filter(w => w !== name).filter((w, i, a) => a.indexOf(w) === i).slice(0, MAX_WAS) : [];
+          b[k] = { orig: norm(orig), name, was, off: false };
+        });
+      }
+      function toggleView() {
+        view = view === 'mine' ? 'game' : 'mine';
+        localStorage.setItem(VIEW_KEY, view);
+        refreshAll();
+      }
+
+      // ---- Finding names. Only places the game puts a name are touched, never
+      // what people say. Each one is wrapped in <span class="pbn-nm"
+      // data-pbn-nm-orig="game text">, which is then shown as the game text or
+      // your name.
+      function wrap(node, start, len, orig) {
+        if (start + len < node.nodeValue.length) node.splitText(start + len);
+        const target = start ? node.splitText(start) : node;
+        const span = document.createElement('span');
+        span.className = NM;
+        span.dataset.pbnNmOrig = norm(orig);
+        target.replaceWith(span);
+        span.append(target);
+        return span;
+      }
+      function wrapTrimmed(node, from, to = node.nodeValue.length) {
+        const t = node.nodeValue;
+        while (from < to && /\s/.test(t[from])) from++;
+        while (to > from && /\s/.test(t[to - 1])) to--;
+        if (to > from) wrap(node, from, to - from, t.slice(from, to));
+      }
+      function process(root) {
+        // Speakers: <span class="chat-name-…">Name</span>, "Name Rolls..." on roll cards.
+        root.querySelectorAll('[class*="chat-name"]').forEach(n => {
+          if (n.childNodes.length !== 1 || n.firstChild.nodeType !== 3) return;
+          const t = n.firstChild.nodeValue;
+          const roll = t.match(/^(.*?)\s+Rolls\.\.\.\s*$/);
+          wrapTrimmed(n.firstChild, 0, roll ? roll[1].length : t.length);
+        });
+        // [SYSTEM] lines starting with someone ("X arrives…", "X heads south").
+        // Where a desc ends can't be told there, so only saved names match.
+        const keys = Object.keys(book).sort((a, b) => b.length - a.length);
+        if (keys.length) root.querySelectorAll('p > span.text-orange-9:first-child').forEach(label => {
+          const node = label.nextSibling;
+          if (label.textContent.trim() !== '[SYSTEM]' || !node || node.nodeType !== 3) return;
+          const t = node.nodeValue;
+          const lead = t.length - t.trimStart().length;
+          const low = t.slice(lead).toLowerCase();
+          const k = keys.find(k => low.startsWith(k) && (low.length === k.length || /[\s,.!?;:'’]/.test(low[k.length])));
+          if (k) wrap(node, lead, k.length, t.substr(lead, k.length));
+        });
+        // look output: "• Name <em>(breathing)</em>", "You look at Name <em>…",
+        // and <em>Among them, Name.</em> when peering into the next room.
+        root.querySelectorAll('p.look-output').forEach(p => {
+          for (const node of Array.from(p.childNodes)) {
+            if (node.nodeType !== 3) continue;
+            const m = node.nodeValue.match(/^(\s*•\s*|\s*You look at\s+)\S/);
+            if (m) wrapTrimmed(node, m[1].length);
+          }
+          p.querySelectorAll(':scope > em').forEach(em => {
+            const node = em.firstChild;
+            if (em.childNodes.length !== 1 || node.nodeType !== 3) return;
+            const m = node.nodeValue.match(/^(Among them, )(.+?)\.?$/);
+            if (m && book[keyOf(m[2])]) wrap(node, m[1].length, m[2].length, m[2]);
+          });
+        });
+      }
+      function render(span, forLog = false) {
+        const orig = span.dataset.pbnNmOrig;
+        const e = book[keyOf(orig)];
+        const mine = !!e && (forLog || (view === 'mine' && !e.off));
+        const text = mine ? e.name : orig;
+        if (span.textContent !== text) span.textContent = text;
+        if (forLog) return;
+        span.classList.toggle(`${NM}--mine`, mine);
+        span.title = mine ? `Your name for them. The game shows: ${orig}`
+          : e ? `You call them ${e.name} (showing the game's text)` : 'Click to give them your own name';
+      }
+      function processRow(row) { process(row); row.querySelectorAll('.' + NM).forEach(s => render(s)); }
+
+      // ---- Keeping the chat current. Observer callbacks run before paint, so
+      // a new line never flashes the game text first.
+      let observer = null, container = null;
+      function refreshAll() {
+        const cont = document.querySelector(CHAT);
+        if (cont) processRow(cont);
+        refreshButton();
+      }
+      function syncContainer() {
+        const cont = document.querySelector(CHAT);
+        if (!cont || cont === container) return;
+        if (observer) observer.disconnect();
+        container = cont;
+        processRow(cont);
+        observer = new MutationObserver(ms => {
+          const rows = new Set();
+          for (const m of ms) for (const n of m.addedNodes) {
+            if (n.nodeType !== 1) continue;
+            const row = n.closest(ROW);
+            if (row) rows.add(row); else n.querySelectorAll(ROW).forEach(r => rows.add(r));
+          }
+          rows.forEach(processRow); // re-runs on our own spans find nothing new, so this settles
+        });
+        observer.observe(cont, { childList: true, subtree: true });
+      }
+
+      c.addStyle(`
+        .${NM} { cursor: pointer; border-radius: 2px; }
+        .${NM}:hover { background: #e0b84a24; }
+        .${NM}--mine { text-decoration: underline dotted #e0b84acc; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+        .${NM}--mine::after {
+          content: '✦'; display: inline-block; margin-left: 2px; font-size: .7em; line-height: 0; vertical-align: super;
+          color: #e0b84a; font-style: normal; font-weight: normal; text-decoration: none;
+        }
+        #pbn-nm-quick.pbn-nm-quick--on { color: #e0b84a !important; }
+        .pbn-nm-orig { padding: 0 16px 8px; color: #e8ddd0; font-size: 1rem; font-style: italic; line-height: 1.35; overflow-wrap: anywhere; }
+        .pbn-nm-form { display: flex; gap: 6px; padding: 2px 16px 8px; }
+        .pbn-nm-input {
+          flex: 1; min-width: 0; padding: 6px 9px; background: #0d0707; color: #e8ddd0; border: 1px solid #5a1212; border-radius: 4px;
+          font: inherit; font-size: 1rem;
+        }
+        .pbn-nm-input:focus { outline: none; border-color: #e0b84a; }
+        .pbn-nm-save {
+          flex: 0 0 auto; padding: 5px 14px; cursor: pointer; background: #9e2b2b; color: #f3e6cf; border: 1px solid #9e2b2b; border-radius: 4px;
+          font: inherit; font-size: .95rem;
+        }
+        .pbn-nm-save:hover { background: #b33434; }
+        .pbn-nm-list { max-height: min(55vh, 420px); overflow-y: auto; }
+        .pbn-nm-list .pbn-tk-menu__item { flex-direction: column; align-items: flex-start; gap: 1px; }
+        .pbn-nm-list__orig { color: #9a8a7a; font-size: .9rem; font-style: italic; }
+        .pbn-nm-menu .pbn-nm-forget:hover:not(:disabled) { color: #e07062; }
+      `);
+
+      // ---- Menus
+      function item(label, fn, cls = '') {
+        const b = c.el('button', { type: 'button', className: `pbn-tk-menu__item ${cls}`, textContent: label });
+        b.setAttribute('role', 'menuitem');
+        b.addEventListener('click', fn);
+        return b;
+      }
+      const sep = () => c.el('div', { className: 'pbn-tk-menu__sep' });
+      const close = () => currentPop?.close();
+
+      function renderEditor(menu, orig, fromList) {
+        const e = book[keyOf(orig)];
+        menu.textContent = '';
+        const input = c.el('input', { type: 'text', className: 'pbn-nm-input', value: e ? e.name : '', placeholder: 'Your name for them…', spellcheck: false });
+        input.setAttribute('aria-label', 'Your name for them');
+        const save = c.el('button', { type: 'button', className: 'pbn-nm-save', textContent: 'Save' });
+        const commit = () => { setName(orig, input.value); close(); };
+        save.addEventListener('click', commit);
+        input.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); commit(); } });
+        menu.append(
+          c.el('div', { className: 'pbn-tk-menu__head', textContent: 'The game shows' }),
+          c.el('div', { className: 'pbn-nm-orig', textContent: orig }),
+          c.el('div', { className: 'pbn-tk-menu__head', textContent: e ? 'You call them' : 'Name this person' }),
+          c.el('div', { className: 'pbn-nm-form' }, input, save));
+        if (e) {
+          menu.append(sep());
+          (e.was || []).forEach(w => menu.append(item(`↺ Back to “${w}”`, () => { setName(orig, w); close(); })));
+          menu.append(
+            item(e.off ? 'Show my name for them again' : "Show the game's text for them", () => {
+              update(b => { const x = b[keyOf(orig)]; if (x) x.off = !x.off; });
+              close();
+            }),
+            item('Forget this name', () => { update(b => { delete b[keyOf(orig)]; }); close(); }, 'pbn-nm-forget'));
+        }
+        if (fromList) menu.append(sep(), item('‹ All names', () => { renderList(menu); currentPop?.place(); }));
+        menu.append(c.el('div', { className: 'pbn-tk-menu__note', textContent: `Saved for ${bookChar} only. It matches this exact text, so a changed short desc needs naming again.` }));
+        setTimeout(() => { input.focus(); input.select(); }, 0);
+      }
+      function renderList(menu) {
+        menu.textContent = '';
+        menu.append(c.el('div', { className: 'pbn-tk-menu__head', textContent: `Your names — ${bookChar}` }));
+        const entries = Object.values(book).sort((a, b) => a.name.localeCompare(b.name));
+        if (!entries.length) {
+          menu.append(c.el('div', { className: 'pbn-tk-menu__note', textContent: 'No names yet. Click a name or short desc in the chat to give that person one.' }));
+        } else {
+          const list = c.el('div', { className: 'pbn-nm-list' });
+          entries.forEach(e => {
+            const b = c.el('button', { type: 'button', className: 'pbn-tk-menu__item' },
+              c.el('span', { textContent: e.name + (e.off ? ' (showing game text)' : '') }),
+              c.el('span', { className: 'pbn-nm-list__orig', textContent: e.orig }));
+            b.addEventListener('click', () => { renderEditor(menu, e.orig, true); currentPop?.place(); });
+            list.append(b);
+          });
+          menu.append(list);
+        }
+        menu.append(sep(), item(view === 'mine' ? "Show the game's text everywhere" : 'Show my names again', () => { toggleView(); close(); }));
+      }
+      function newMenu() {
+        const menu = c.el('div', { className: 'pbn-tk-menu pbn-nm-menu' });
+        menu.setAttribute('role', 'menu');
+        return menu;
+      }
+      function openEditor(trigger, orig) {
+        const menu = newMenu();
+        renderEditor(menu, orig, false);
+        c.openPopover(trigger, menu);
+      }
+      function openList() {
+        const btn = document.getElementById('pbn-nm-quick');
+        if (!btn) { alert('Your names are listed from the play page (the badge icon by the command box).'); return; }
+        const menu = newMenu();
+        renderList(menu);
+        c.openPopover(btn, menu, { above: true });
+        menu.querySelector('.pbn-tk-menu__item')?.focus();
+      }
+
+      function onChatClick(e) {
+        const span = e.target.closest?.(`${CHAT} .${NM}`);
+        if (!span || !window.getSelection()?.isCollapsed) return; // let text selection through
+        e.preventDefault();
+        e.stopPropagation();
+        openEditor(span, span.dataset.pbnNmOrig);
+      }
+
+      // ---- Toolbar badge: click flips your names / the game's text,
+      // right-click lists the names.
+      function refreshButton() {
+        const btn = document.getElementById('pbn-nm-quick');
+        if (!btn) return;
+        const n = Object.keys(book).length;
+        const mine = view === 'mine';
+        btn.classList.toggle('pbn-nm-quick--on', mine && n > 0);
+        btn.setAttribute('aria-pressed', String(mine));
+        const title = mine
+          ? `Showing your names (${n} for ${bookChar}). Click to show the game's text; right-click for the list.`
+          : "Showing the game's text. Click to show your names again; right-click for the list.";
+        if (btn.title !== title) btn.title = title;
+      }
+      function ensureButton() {
+        if (document.getElementById('pbn-nm-quick')) return;
+        const btn = makeIconButton('pbn-nm-quick', 'badge', 'Personal names');
+        if (!btn) return;
+        btn.removeAttribute('aria-haspopup');
+        btn.removeAttribute('aria-expanded');
+        btn.addEventListener('click', () => { close(); toggleView(); });
+        btn.addEventListener('contextmenu', e => { e.preventDefault(); openList(); });
+        refreshButton();
+      }
+
+      function onStorage(e) {
+        if (e.key !== KEY && e.key !== VIEW_KEY) return;
+        view = loadView();
+        loadBook();
+        refreshAll();
+      }
+
+      namesApi = {
+        openList,
+        // Save Log: restores the game text in a copy of a message, or with
+        // withNames writes your names into it.
+        prepareLogCopy(root, withNames) {
+          root.querySelectorAll(`.${NM}[data-pbn-nm-orig]`).forEach(s => { s.textContent = s.dataset.pbnNmOrig; });
+          if (!withNames) return;
+          process(root);
+          root.querySelectorAll('.' + NM).forEach(s => render(s, true));
+        },
+        writesMine: () => opt('names', 'log', 'game') === 'mine' && Object.keys(book).length > 0,
+      };
+
+      let tick = null;
+      c.onRoute(c.isPlay, () => {
+        loadBook();
+        const run = () => {
+          ensureButton();
+          syncContainer();
+          if ((c.getCharName() || 'default') !== bookChar) { loadBook(); refreshAll(); }
+        };
+        run();
+        tick = setInterval(run, 1000);
+        document.addEventListener('click', onChatClick);
+        window.addEventListener('storage', onStorage);
+      }, () => {
+        clearInterval(tick);
+        if (observer) observer.disconnect();
+        observer = null; container = null;
+        document.removeEventListener('click', onChatClick);
+        window.removeEventListener('storage', onStorage);
+      });
+    },
+  });
+
+  // ==========================================================================
   // SHARED MENU STYLE (popovers used by Hide, presets and languages)
   // ==========================================================================
 
@@ -2177,7 +2523,7 @@
       el('div', { className: 'pbn-tk__intro', textContent: 'Switch features on or off and adjust their settings. Everything is stored in this browser.' }),
       dirtyBar, body,
       el('div', { className: 'pbn-tk__foot' },
-        el('span', { className: 'pbn-tk__foot-note', textContent: 'Backup or move your toolkit data (button lists, presets, languages, card order).' }),
+        el('span', { className: 'pbn-tk__foot-note', textContent: 'Backup or move your toolkit data (button lists, presets, languages, names, card order).' }),
         exportBtn, importBtn, closeBtn));
     panel.setAttribute('role', 'dialog');
     panel.setAttribute('aria-modal', 'true');
