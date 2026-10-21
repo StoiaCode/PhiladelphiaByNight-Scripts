@@ -37,7 +37,7 @@ press **Alt+Shift+T** anywhere on the site).
   clearing the site's data would wipe.
 
 New features are added to the toolkit, and some exist only there (see
-[Personal Names](#personal-names-toolkit-only)).
+[Personal Names & Notes](#personal-names--notes-toolkit-only)).
 
 ### The separate scripts
 
@@ -341,7 +341,7 @@ The list is stored per browser/device. This script has no configurable options.
 
 ---
 
-## Personal Names (toolkit only)
+## Personal Names & Notes (toolkit only)
 
 Give people your own names. Someone you only know as *"A short beefcake of a man"* introduces himself as Arsenije: click his short desc in the chat, type the name, and from then on he shows up as **Arsenije** wherever the game names him. If he re-introduces himself as Count Fabulous next week, click again and rename him.
 
@@ -357,20 +357,21 @@ Give people your own names. Someone you only know as *"A short beefcake of a man
   Coloured short descs work too (`A <tired man> wearing a <black suit>`); switching back to the game's text restores the colours.
 - **Exact matches.** A name is tied to the exact name or short desc the game shows (capitals don't matter). If someone changes their short desc, they're a stranger again until you name the new one.
 - **Per character.** Each of your characters has their own names, so your Camarilla character doesn't recognise the people your Sabbat character met.
-- **You can tell it's yours.** Your names have a dotted gold underline and a small ✦. Hover one to see what the game actually shows.
+- **You can tell it's yours.** Your names have a dotted gold underline and a small ✦. Hover one to see what the game actually shows. People you've only taken notes on (no name) get a grey dotted underline.
 
-Clicking a name opens a small menu:
+Clicking a name opens a menu:
 
-- **Name this person / You call them** — type the name and press Enter. Clearing the field and saving removes it.
+- **Name this person / You call them** — type the name and press Enter. Clearing the field and saving removes the name (notes stay).
+- **Notes** — your own notes on this person, with Markdown: `# heading`, `**bold**`, `*italic*`, `- lists`, `> quotes`, `[links](https://…)`. Click **Write notes…** (or click existing notes) to edit. Notes are saved as you type, so closing the menu or pressing Esc never loses anything; **Done** (or Ctrl+Enter) shows them formatted again.
 - **↺ Back to "…"** — the last few names you gave this person, one click to switch back.
 - **Show the game's text for them** — turns your name off for just this person without forgetting it.
-- **Forget this name.**
+- **Forget this person** — deletes the name and notes (asks first if there are notes).
 
-A **badge icon** by the command box flips *everything* between your names and the game's text, which is handy right before a screenshot. It's gold while your names are showing. **Right-click** it to see every name you've given on this character (also under **Your names…** in the toolkit panel).
+A **badge icon** by the command box flips *everything* between your names and the game's text, which is handy right before a screenshot. It's gold while your names are showing. **Right-click** it to look people up: everyone you've named or taken notes on for this character, with a search box that matches names, short descs and note text (also under **People & notes…** in the toolkit panel). Press Enter to open the first match.
 
 **Chat Log:** Search finds people under either name. **Save Log** writes the game's text by default; switch *Save Log writes* to *my names* in the toolkit panel to get your names in the file instead.
 
-Names are stored per browser/device and included in the toolkit's Export/Import.
+Names and notes are stored per browser/device and included in the toolkit's Export/Import, which is worth doing now and then since clearing the site's data wipes them.
 
 ---
 

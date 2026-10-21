@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.1.1
+// @version      1.2.0
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -22,7 +22,7 @@
     return;
   }
 
-  const TK_VERSION = '1.1.1';
+  const TK_VERSION = '1.2.0';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -2001,16 +2001,16 @@
 
   defineModule({
     id: 'names',
-    name: 'Personal Names',
-    description: 'Give people your own names: click a name or short desc in the chat to name them. Exact matches only, kept per character.',
-    note: "Your names get a dotted underline and a ✦; hover one to see what the game shows. The badge icon by the command box flips between your names and the game's text (right-click it for the list).",
+    name: 'Personal Names & Notes',
+    description: 'Click a name or short desc in the chat to give that person your own name and keep notes on them (Markdown). Exact matches only, kept per character.',
+    note: "Your names get a dotted gold underline and a ✦, people you only have notes on a grey dotted underline. The badge icon by the command box flips between your names and the game's text; right-click it to find anyone you've named or noted.",
     settings: [
       { key: 'log', label: 'Save Log writes', type: 'select', default: 'game',
         options: [['game', "the game's text"], ['mine', 'my names']] },
     ],
-    actions: [{ label: 'Your names…', run: () => namesApi?.openList() }],
+    actions: [{ label: 'People & notes…', run: () => namesApi?.openList() }],
     start(c) {
-      const KEY = 'pbn-names';       // { [character]: { [lowercased game text]: { orig, name, was[], off } } }
+      const KEY = 'pbn-names';       // { [character]: { [lowercased game text]: { orig, name, was[], off, notes? } } }
       const VIEW_KEY = 'pbn-names-view'; // 'mine' | 'game'
       const MAX_WAS = 5;
       const CHAT = '.chat-container';
@@ -2032,15 +2032,67 @@
         book = b;
         refreshAll();
       }
+      const pastNames = (e, except) => [e.name, ...(e.was || [])].filter(w => w && w !== except).filter((w, i, a) => a.indexOf(w) === i).slice(0, MAX_WAS);
+      // Clearing the name keeps the person if there are notes on them.
       function setName(orig, name) {
         name = norm(name);
         update(b => {
           const k = keyOf(orig), e = b[k];
-          if (!name) { delete b[k]; return; }
+          if (!name) {
+            if (e?.notes) { e.was = pastNames(e, ''); e.name = ''; } else delete b[k];
+            return;
+          }
           if (e && e.name === name) { e.off = false; return; }
-          const was = e ? [e.name, ...(e.was || [])].filter(w => w !== name).filter((w, i, a) => a.indexOf(w) === i).slice(0, MAX_WAS) : [];
-          b[k] = { orig: norm(orig), name, was, off: false };
+          b[k] = { ...e, orig: norm(orig), name, was: e ? pastNames(e, name) : [], off: false };
         });
+      }
+      // Called on every keystroke; the chat is only re-rendered when someone
+      // gains or loses notes (that changes their marker).
+      function saveNotes(orig, text) {
+        const all = loadAll();
+        const b = all[bookChar] || (all[bookChar] = {});
+        const k = keyOf(orig);
+        let e = b[k];
+        const had = !!e?.notes;
+        if (text.trim()) (e || (e = b[k] = { orig: norm(orig), name: '', was: [], off: false })).notes = text;
+        else if (e) { delete e.notes; if (!e.name) delete b[k]; }
+        if (!Object.keys(b).length) delete all[bookChar];
+        localStorage.setItem(KEY, JSON.stringify(all));
+        book = all[bookChar] || {};
+        if (had !== !!text.trim()) refreshAll();
+      }
+
+      // Small, safe Markdown for notes: everything is escaped first, then
+      // headings, lists, quotes, rules, **bold**, *italic*, ~~strike~~,
+      // `code` and [links](https://…) are turned into tags.
+      function markdown(src) {
+        const esc = s => s.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+        const inline = s => esc(s)
+          .replace(/`([^`]+)`/g, '<code>$1</code>')
+          .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+          .replace(/(^|[^*])\*(?!\s)(.+?)\*(?!\*)/g, '$1<em>$2</em>')
+          .replace(/(^|[\s(])_(?!\s)(.+?)_(?=[\s.,;:!?)]|$)/g, '$1<em>$2</em>')
+          .replace(/~~(.+?)~~/g, '<del>$1</del>')
+          .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+        const out = [];
+        let para = [], list = null;
+        const flushPara = () => { if (para.length) out.push(`<p>${para.join('<br>')}</p>`); para = []; };
+        const flushList = () => { if (list) out.push(`<${list.tag}>${list.items.map(i => `<li>${i}</li>`).join('')}</${list.tag}>`); list = null; };
+        for (const line of String(src).split(/\r?\n/)) {
+          let m;
+          if (!line.trim()) { flushPara(); flushList(); }
+          else if ((m = line.match(/^\s*(#{1,3})\s+(.*)$/))) { flushPara(); flushList(); out.push(`<h${m[1].length + 3}>${inline(m[2])}</h${m[1].length + 3}>`); }
+          else if (/^\s*(-{3,}|\*{3,})\s*$/.test(line)) { flushPara(); flushList(); out.push('<hr>'); }
+          else if ((m = line.match(/^\s*([-*+]|\d+[.)])\s+(.*)$/))) {
+            const tag = /\d/.test(m[1]) ? 'ol' : 'ul';
+            flushPara();
+            if (list && list.tag !== tag) flushList();
+            (list || (list = { tag, items: [] })).items.push(inline(m[2]));
+          } else if ((m = line.match(/^\s*>\s?(.*)$/))) { flushPara(); flushList(); out.push(`<blockquote>${inline(m[1])}</blockquote>`); }
+          else { flushList(); para.push(inline(line)); }
+        }
+        flushPara(); flushList();
+        return out.join('');
       }
       function toggleView() {
         view = view === 'mine' ? 'game' : 'mine';
@@ -2150,16 +2202,20 @@
       function render(span, forLog = false) {
         const orig = span.dataset.pbnNmOrig;
         const e = book[keyOf(orig)];
-        const mine = !!e && (forLog || (view === 'mine' && !e.off));
+        const mine = !!e?.name && (forLog || (view === 'mine' && !e.off));
         const html = span.dataset.pbnNmHtml;
         if (mine || !html) {
           const text = mine ? e.name : orig;
           if (span.textContent !== text || span.children.length) span.textContent = text;
         } else if (span.innerHTML !== html) span.innerHTML = html;
         if (forLog) return;
+        const notes = !!e?.notes;
         span.classList.toggle(`${NM}--mine`, mine);
-        span.title = mine ? `Your name for them. The game shows: ${orig}`
-          : e ? `You call them ${e.name} (showing the game's text)` : 'Click to give them your own name';
+        span.classList.toggle(`${NM}--noted`, notes && !mine && view === 'mine');
+        span.title = (mine ? `Your name for them. The game shows: ${orig}`
+          : e?.name ? `You call them ${e.name} (showing the game's text)`
+          : notes ? 'You have notes on them' : 'Click to name them or take notes')
+          + (notes ? ' · click to read your notes' : '');
       }
 
       // Typing indicator ("X is typing", "X and Y are typing"). Vue replaces
@@ -2171,7 +2227,7 @@
         const cur = el.textContent;
         if (el.dataset.pbnNmGame === undefined || cur !== el.dataset.pbnNmShown) el.dataset.pbnNmGame = cur;
         const game = el.dataset.pbnNmGame;
-        const swap = who => { const e = book[keyOf(who)]; return e && view === 'mine' && !e.off ? e.name : who; };
+        const swap = who => { const e = book[keyOf(who)]; return e?.name && view === 'mine' && !e.off ? e.name : who; };
         let out = game;
         const m = game.match(/^(.+?) (is|are) typing(.*)$/);
         if (m) {
@@ -2248,6 +2304,36 @@
         .pbn-nm-list .pbn-tk-menu__item { flex-direction: column; align-items: flex-start; gap: 1px; }
         .pbn-nm-list__orig { color: #9a8a7a; font-size: .9rem; font-style: italic; }
         .pbn-nm-menu .pbn-nm-forget:hover:not(:disabled) { color: #e07062; }
+        .${NM}--noted { text-decoration: underline dotted #9a8a7a; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+        .pbn-tk-menu.pbn-nm-menu { width: min(460px, 94vw); max-width: none; max-height: calc(100vh - 16px); overflow-y: auto; }
+        .pbn-nm-notes {
+          margin: 0 16px 8px; padding: 8px 12px; max-height: 38vh; overflow-y: auto; cursor: text;
+          background: #0d0707; border: 1px solid #5a121266; border-radius: 4px;
+          color: #e8ddd0; font-size: 1rem; line-height: 1.45; overflow-wrap: anywhere;
+        }
+        .pbn-nm-notes:hover { border-color: #5a1212; }
+        .pbn-nm-notes--empty { color: #9a8a7a; font-style: italic; }
+        .pbn-nm-notes > :first-child { margin-top: 0; }
+        .pbn-nm-notes > :last-child { margin-bottom: 0; }
+        .pbn-nm-notes p, .pbn-nm-notes ul, .pbn-nm-notes ol, .pbn-nm-notes blockquote { margin: 0 0 .6em; }
+        .pbn-nm-notes ul, .pbn-nm-notes ol { padding-left: 1.4em; }
+        .pbn-nm-notes h4, .pbn-nm-notes h5, .pbn-nm-notes h6 { margin: .2em 0 .4em; color: #f3e6cf; font-weight: bold; line-height: 1.3; }
+        .pbn-nm-notes h4 { font-size: 1.2rem; } .pbn-nm-notes h5 { font-size: 1.08rem; } .pbn-nm-notes h6 { font-size: 1rem; }
+        .pbn-nm-notes blockquote { padding-left: 10px; border-left: 3px solid #5a1212; color: #c4b49a; font-style: italic; }
+        .pbn-nm-notes code { padding: 0 4px; background: #5a121240; border-radius: 3px; font-family: 'Courier New', monospace; font-size: .95em; }
+        .pbn-nm-notes hr { border: 0; border-top: 1px solid #5a1212; margin: .6em 0; }
+        .pbn-nm-notes a { color: #e0b84a; }
+        .pbn-nm-notes strong { color: #f3e6cf; }
+        .pbn-nm-notes-edit {
+          display: block; width: calc(100% - 32px); box-sizing: border-box; margin: 0 16px 6px; min-height: 180px; resize: vertical; padding: 8px 10px;
+          background: #0d0707; color: #e8ddd0; border: 1px solid #5a1212; border-radius: 4px;
+          font: 1rem/1.45 Georgia, 'Times New Roman', serif;
+        }
+        .pbn-nm-notes-edit:focus { outline: none; border-color: #e0b84a; }
+        .pbn-nm-notes-bar { display: flex; align-items: center; gap: 10px; padding: 0 16px 8px; }
+        .pbn-nm-notes-hint { flex: 1; color: #9a8a7a; font-size: .9rem; font-style: italic; line-height: 1.35; }
+        .pbn-nm-filter { display: block; width: calc(100% - 32px); box-sizing: border-box; margin: 2px 16px 6px; }
+        .pbn-nm-list__mark { color: #9a8a7a; font-size: .9rem; }
       `);
 
       // ---- Menus
@@ -2260,10 +2346,47 @@
       const sep = () => c.el('div', { className: 'pbn-tk-menu__sep' });
       const close = () => currentPop?.close();
 
+      // Notes: shown rendered; clicking them (or "Write notes") switches to a
+      // textarea that saves on every keystroke, so closing never loses text.
+      function notesSection(menu, orig) {
+        const box = c.el('div');
+        const showView = () => {
+          const notes = book[keyOf(orig)]?.notes || '';
+          box.textContent = '';
+          if (!notes) {
+            box.append(item('✎ Write notes…', showEdit));
+            return;
+          }
+          const shown = c.el('div', { className: 'pbn-nm-notes', title: 'Click to edit' });
+          shown.innerHTML = markdown(notes);
+          shown.addEventListener('click', ev => { if (!ev.target.closest('a')) showEdit(); });
+          box.append(shown);
+        };
+        const showEdit = () => {
+          const ta = c.el('textarea', { className: 'pbn-nm-notes-edit', value: book[keyOf(orig)]?.notes || '', spellcheck: true,
+            placeholder: 'Who they are, where you met, what they want, what they owe you…' });
+          ta.setAttribute('aria-label', 'Notes');
+          ta.addEventListener('input', () => saveNotes(orig, ta.value));
+          const done = c.el('button', { type: 'button', className: 'pbn-nm-save', textContent: 'Done' });
+          const finish = () => { showView(); currentPop?.place(); };
+          done.addEventListener('click', finish);
+          ta.addEventListener('keydown', ev => { if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); finish(); } });
+          box.textContent = '';
+          box.append(ta, c.el('div', { className: 'pbn-nm-notes-bar' },
+            c.el('span', { className: 'pbn-nm-notes-hint', textContent: 'Saved as you type. Markdown: **bold**, *italic*, # heading, - list, > quote, [link](https://…)' }),
+            done));
+          currentPop?.place();
+          ta.focus();
+          ta.setSelectionRange(ta.value.length, ta.value.length);
+        };
+        showView();
+        menu.append(c.el('div', { className: 'pbn-tk-menu__head', textContent: 'Notes' }), box);
+      }
+
       function renderEditor(menu, orig, fromList) {
         const e = book[keyOf(orig)];
         menu.textContent = '';
-        const input = c.el('input', { type: 'text', className: 'pbn-nm-input', value: e ? e.name : '', placeholder: 'Your name for them…', spellcheck: false });
+        const input = c.el('input', { type: 'text', className: 'pbn-nm-input', value: e?.name || '', placeholder: 'Your name for them…', spellcheck: false });
         input.setAttribute('aria-label', 'Your name for them');
         const save = c.el('button', { type: 'button', className: 'pbn-nm-save', textContent: 'Save' });
         const commit = () => { setName(orig, input.value); close(); };
@@ -2272,38 +2395,56 @@
         menu.append(
           c.el('div', { className: 'pbn-tk-menu__head', textContent: 'The game shows' }),
           c.el('div', { className: 'pbn-nm-orig', textContent: orig }),
-          c.el('div', { className: 'pbn-tk-menu__head', textContent: e ? 'You call them' : 'Name this person' }),
+          c.el('div', { className: 'pbn-tk-menu__head', textContent: e?.name ? 'You call them' : 'Name this person' }),
           c.el('div', { className: 'pbn-nm-form' }, input, save));
+        notesSection(menu, orig);
         if (e) {
           menu.append(sep());
           (e.was || []).forEach(w => menu.append(item(`↺ Back to “${w}”`, () => { setName(orig, w); close(); })));
-          menu.append(
-            item(e.off ? 'Show my name for them again' : "Show the game's text for them", () => {
-              update(b => { const x = b[keyOf(orig)]; if (x) x.off = !x.off; });
-              close();
-            }),
-            item('Forget this name', () => { update(b => { delete b[keyOf(orig)]; }); close(); }, 'pbn-nm-forget'));
+          if (e.name) menu.append(item(e.off ? 'Show my name for them again' : "Show the game's text for them", () => {
+            update(b => { const x = b[keyOf(orig)]; if (x) x.off = !x.off; });
+            close();
+          }));
+          menu.append(item('Forget this person', () => {
+            if (book[keyOf(orig)]?.notes && !confirm(`Delete your name and notes for “${orig}”? This can't be undone.`)) return;
+            update(b => { delete b[keyOf(orig)]; });
+            close();
+          }, 'pbn-nm-forget'));
         }
-        if (fromList) menu.append(sep(), item('‹ All names', () => { renderList(menu); currentPop?.place(); }));
+        if (fromList) menu.append(sep(), item('‹ Everyone', () => { renderList(menu); currentPop?.place(); }));
         menu.append(c.el('div', { className: 'pbn-tk-menu__note', textContent: `Saved for ${bookChar} only. It matches this exact text, so a changed short desc needs naming again.` }));
-        setTimeout(() => { input.focus(); input.select(); }, 0);
+        if (!e?.notes || e.name) setTimeout(() => { input.focus(); input.select(); }, 0);
       }
       function renderList(menu) {
         menu.textContent = '';
-        menu.append(c.el('div', { className: 'pbn-tk-menu__head', textContent: `Your names — ${bookChar}` }));
-        const entries = Object.values(book).sort((a, b) => a.name.localeCompare(b.name));
+        menu.append(c.el('div', { className: 'pbn-tk-menu__head', textContent: `People — ${bookChar}` }));
+        const entries = Object.values(book).sort((a, b) => (a.name || a.orig).localeCompare(b.name || b.orig));
         if (!entries.length) {
-          menu.append(c.el('div', { className: 'pbn-tk-menu__note', textContent: 'No names yet. Click a name or short desc in the chat to give that person one.' }));
+          menu.append(c.el('div', { className: 'pbn-tk-menu__note', textContent: 'Nobody yet. Click a name or short desc in the chat to name that person or take notes on them.' }));
         } else {
+          const filter = c.el('input', { type: 'text', className: 'pbn-nm-input pbn-nm-filter', placeholder: 'Find someone (name, desc or notes)…', spellcheck: false });
+          filter.setAttribute('aria-label', 'Find someone');
           const list = c.el('div', { className: 'pbn-nm-list' });
-          entries.forEach(e => {
+          const rows = entries.map(e => {
+            const marks = [e.notes ? '✎ notes' : '', e.off ? 'showing game text' : ''].filter(Boolean).join(' · ');
             const b = c.el('button', { type: 'button', className: 'pbn-tk-menu__item' },
-              c.el('span', { textContent: e.name + (e.off ? ' (showing game text)' : '') }),
-              c.el('span', { className: 'pbn-nm-list__orig', textContent: e.orig }));
+              c.el('span', { textContent: e.name || e.orig }, marks ? c.el('span', { className: 'pbn-nm-list__mark', textContent: `  ${marks}` }) : null),
+              e.name ? c.el('span', { className: 'pbn-nm-list__orig', textContent: e.orig }) : null);
             b.addEventListener('click', () => { renderEditor(menu, e.orig, true); currentPop?.place(); });
             list.append(b);
+            return [b, `${e.name} ${e.orig} ${e.notes || ''}`.toLowerCase()];
           });
-          menu.append(list);
+          filter.addEventListener('input', () => {
+            const q = filter.value.trim().toLowerCase();
+            rows.forEach(([b, s]) => { b.style.display = !q || s.includes(q) ? '' : 'none'; });
+          });
+          filter.addEventListener('keydown', ev => {
+            if (ev.key !== 'Enter') return;
+            ev.preventDefault();
+            rows.find(([b]) => b.style.display !== 'none')?.[0].click();
+          });
+          menu.append(filter, list);
+          setTimeout(() => filter.focus(), 0);
         }
         menu.append(sep(), item(view === 'mine' ? "Show the game's text everywhere" : 'Show my names again', () => { toggleView(); close(); }));
       }
@@ -2323,7 +2464,7 @@
         const menu = newMenu();
         renderList(menu);
         c.openPopover(btn, menu, { above: true });
-        menu.querySelector('.pbn-tk-menu__item')?.focus();
+        if (!menu.querySelector('.pbn-nm-filter')) menu.querySelector('.pbn-tk-menu__item')?.focus();
       }
 
       function onChatClick(e) {
@@ -2339,13 +2480,13 @@
       function refreshButton() {
         const btn = document.getElementById('pbn-nm-quick');
         if (!btn) return;
-        const n = Object.keys(book).length;
+        const n = Object.values(book).filter(e => e.name).length;
         const mine = view === 'mine';
         btn.classList.toggle('pbn-nm-quick--on', mine && n > 0);
         btn.setAttribute('aria-pressed', String(mine));
         const title = mine
-          ? `Showing your names (${n} for ${bookChar}). Click to show the game's text; right-click for the list.`
-          : "Showing the game's text. Click to show your names again; right-click for the list.";
+          ? `Showing your names (${n} for ${bookChar}). Click to show the game's text; right-click for everyone you've named or noted.`
+          : "Showing the game's text. Click to show your names again; right-click for everyone you've named or noted.";
         if (btn.title !== title) btn.title = title;
       }
       function ensureButton() {
@@ -2376,7 +2517,7 @@
           process(root);
           root.querySelectorAll('.' + NM).forEach(s => render(s, true));
         },
-        writesMine: () => opt('names', 'log', 'game') === 'mine' && Object.keys(book).length > 0,
+        writesMine: () => opt('names', 'log', 'game') === 'mine' && Object.values(book).some(e => e.name),
       };
 
       let tick = null;
