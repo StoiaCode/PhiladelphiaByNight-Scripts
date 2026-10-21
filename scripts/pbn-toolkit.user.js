@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.1.0
+// @version      1.1.1
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -22,7 +22,7 @@
     return;
   }
 
-  const TK_VERSION = '1.1.0';
+  const TK_VERSION = '1.1.1';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -2051,56 +2051,99 @@
       // ---- Finding names. Only places the game puts a name are touched, never
       // what people say. Each one is wrapped in <span class="pbn-nm"
       // data-pbn-nm-orig="game text">, which is then shown as the game text or
-      // your name.
-      function wrap(node, start, len, orig) {
-        if (start + len < node.nodeValue.length) node.splitText(start + len);
-        const target = start ? node.splitText(start) : node;
-        const span = document.createElement('span');
-        span.className = NM;
-        span.dataset.pbnNmOrig = norm(orig);
-        target.replaceWith(span);
-        span.append(target);
-        return span;
+      // your name. Short descs can carry colour spans (A <span>tired man</span>
+      // wearing…), so a name is a run of nodes, read as one whitespace-collapsed
+      // string with a position map back into the DOM.
+      const OBJ = '￼'; // stands in for an already-wrapped name
+      function mapText(nodes) {
+        let text = '';
+        const pos = [];
+        const add = (ch, at) => {
+          if (ch === ' ' && (!text || text.endsWith(' '))) return;
+          text += ch;
+          pos.push(at);
+        };
+        const walk = n => {
+          if (n.nodeType === 3) {
+            const t = n.nodeValue;
+            for (let i = 0; i < t.length; i++) add(/\s/.test(t[i]) ? ' ' : t[i], [n, i]);
+          } else if (n.nodeType === 1) {
+            if (n.classList.contains(NM)) add(OBJ, null);
+            else n.childNodes.forEach(walk);
+          }
+        };
+        nodes.forEach(walk);
+        return { text, pos, root: nodes[0]?.parentNode };
       }
-      function wrapTrimmed(node, from, to = node.nodeValue.length) {
-        const t = node.nodeValue;
-        while (from < to && /\s/.test(t[from])) from++;
-        while (to > from && /\s/.test(t[to - 1])) to--;
-        if (to > from) wrap(node, from, to - from, t.slice(from, to));
+      const runUntil = (first, stop) => {
+        const nodes = [];
+        for (let n = first; n && !(n.nodeType === 1 && stop.test(n.tagName)); n = n.nextSibling) nodes.push(n);
+        return nodes;
+      };
+      // Wraps text[s, e) of a mapped run. Several wraps in one run must go
+      // last-to-first so earlier positions stay valid.
+      function wrapAt(map, s, e) {
+        while (s < e && map.text[s] === ' ') s++;
+        while (e > s && map.text[e - 1] === ' ') e--;
+        const orig = map.text.slice(s, e);
+        if (!orig || orig.includes(OBJ)) return;
+        const [sn, so] = map.pos[s], [en, eo] = map.pos[e - 1];
+        const doc = sn.ownerDocument;
+        const r = doc.createRange();
+        // A name starting/ending at the edge of a colour span takes the whole
+        // span, so splitting doesn't leave an empty copy of it behind.
+        const root = map.root;
+        let a = sn, b = en;
+        if (so === 0) { while (a.parentNode !== root && a === a.parentNode.firstChild) a = a.parentNode; r.setStartBefore(a); }
+        else r.setStart(sn, so);
+        if (eo + 1 === en.nodeValue.length) { while (b.parentNode !== root && b === b.parentNode.lastChild) b = b.parentNode; r.setEndAfter(b); }
+        else r.setEnd(en, eo + 1);
+        const span = doc.createElement('span');
+        span.className = NM;
+        span.dataset.pbnNmOrig = orig;
+        span.append(r.extractContents());
+        if (span.children.length) span.dataset.pbnNmHtml = span.innerHTML; // keeps the game's colours for switching back
+        r.insertNode(span);
+      }
+      const NAME_END = /[\s,.!?;:'’]/;
+      function savedKeyAt(low, at, keys) {
+        return keys.find(k => low.startsWith(k, at) && (low.length === at + k.length || NAME_END.test(low[at + k.length])));
       }
       function process(root) {
+        const keys = Object.keys(book).sort((a, b) => b.length - a.length);
         // Speakers: <span class="chat-name-…">Name</span>, "Name Rolls..." on roll cards.
         root.querySelectorAll('[class*="chat-name"]').forEach(n => {
-          if (n.childNodes.length !== 1 || n.firstChild.nodeType !== 3) return;
-          const t = n.firstChild.nodeValue;
-          const roll = t.match(/^(.*?)\s+Rolls\.\.\.\s*$/);
-          wrapTrimmed(n.firstChild, 0, roll ? roll[1].length : t.length);
+          const map = mapText(Array.from(n.childNodes));
+          const roll = map.text.match(/^(.*?) ?Rolls\.\.\. ?$/);
+          wrapAt(map, 0, roll ? roll[1].length : map.text.length);
         });
-        // [SYSTEM] lines starting with someone ("X arrives…", "X heads south").
-        // Where a desc ends can't be told there, so only saved names match.
-        const keys = Object.keys(book).sort((a, b) => b.length - a.length);
+        // [SYSTEM] lines: "X arrives…", "X heads south", "X looks at Y." Where a
+        // desc ends can't be told there, so only saved names match.
         if (keys.length) root.querySelectorAll('p > span.text-orange-9:first-child').forEach(label => {
-          const node = label.nextSibling;
-          if (label.textContent.trim() !== '[SYSTEM]' || !node || node.nodeType !== 3) return;
-          const t = node.nodeValue;
-          const lead = t.length - t.trimStart().length;
-          const low = t.slice(lead).toLowerCase();
-          const k = keys.find(k => low.startsWith(k) && (low.length === k.length || /[\s,.!?;:'’]/.test(low[k.length])));
-          if (k) wrap(node, lead, k.length, t.substr(lead, k.length));
+          if (label.textContent.trim() !== '[SYSTEM]') return;
+          const map = mapText(runUntil(label.nextSibling, /^(BR|DIV)$/));
+          const low = map.text.toLowerCase();
+          const spans = [];
+          const k = savedKeyAt(low, 0, keys);
+          if (k) spans.push([0, k.length]);
+          const at = low.match(/ looks at (.+?)\.$/);
+          if (at && book[at[1]]) { const end = at.index + at[0].length - 1; spans.push([end - at[1].length, end]); }
+          spans.sort((a, b) => b[0] - a[0]).forEach(([s, e]) => wrapAt(map, s, e));
         });
-        // look output: "• Name <em>(breathing)</em>", "You look at Name <em>…",
-        // and <em>Among them, Name.</em> when peering into the next room.
+        // look output: "• Name <em>(breathing)</em>", "You look at Name <em>…" /
+        // "<br>", and <em>Among them, Name.</em> when peering into a room.
         root.querySelectorAll('p.look-output').forEach(p => {
           for (const node of Array.from(p.childNodes)) {
             if (node.nodeType !== 3) continue;
-            const m = node.nodeValue.match(/^(\s*•\s*|\s*You look at\s+)\S/);
-            if (m) wrapTrimmed(node, m[1].length);
+            const lead = node.nodeValue.match(/^\s*(•|You look at)\s/);
+            if (!lead) continue;
+            const map = mapText(runUntil(node, /^(EM|BR|DIV|STRONG)$/));
+            wrapAt(map, map.text.indexOf(lead[1]) + lead[1].length, map.text.length);
           }
           p.querySelectorAll(':scope > em').forEach(em => {
-            const node = em.firstChild;
-            if (em.childNodes.length !== 1 || node.nodeType !== 3) return;
-            const m = node.nodeValue.match(/^(Among them, )(.+?)\.?$/);
-            if (m && book[keyOf(m[2])]) wrap(node, m[1].length, m[2].length, m[2]);
+            const map = mapText(Array.from(em.childNodes));
+            const m = map.text.match(/^(Among them, )(.+?)\.?$/);
+            if (m && book[keyOf(m[2])]) wrapAt(map, m[1].length, m[1].length + m[2].length);
           });
         });
       }
@@ -2108,12 +2151,37 @@
         const orig = span.dataset.pbnNmOrig;
         const e = book[keyOf(orig)];
         const mine = !!e && (forLog || (view === 'mine' && !e.off));
-        const text = mine ? e.name : orig;
-        if (span.textContent !== text) span.textContent = text;
+        const html = span.dataset.pbnNmHtml;
+        if (mine || !html) {
+          const text = mine ? e.name : orig;
+          if (span.textContent !== text || span.children.length) span.textContent = text;
+        } else if (span.innerHTML !== html) span.innerHTML = html;
         if (forLog) return;
         span.classList.toggle(`${NM}--mine`, mine);
         span.title = mine ? `Your name for them. The game shows: ${orig}`
           : e ? `You call them ${e.name} (showing the game's text)` : 'Click to give them your own name';
+      }
+
+      // Typing indicator ("X is typing", "X and Y are typing"). Vue replaces
+      // the whole text when it changes, so swapping it doesn't confuse Vue;
+      // the game's version is kept to tell its updates apart from ours.
+      function syncTyping() {
+        const el = document.querySelector('.typing-indicator .typing-text');
+        if (!el) return;
+        const cur = el.textContent;
+        if (el.dataset.pbnNmGame === undefined || cur !== el.dataset.pbnNmShown) el.dataset.pbnNmGame = cur;
+        const game = el.dataset.pbnNmGame;
+        const swap = who => { const e = book[keyOf(who)]; return e && view === 'mine' && !e.off ? e.name : who; };
+        let out = game;
+        const m = game.match(/^(.+?) (is|are) typing(.*)$/);
+        if (m) {
+          let who = swap(m[1]);
+          const and = m[1].lastIndexOf(' and ');
+          if (who === m[1] && and > 0) who = `${swap(m[1].slice(0, and))} and ${swap(m[1].slice(and + 5))}`;
+          out = `${who} ${m[2]} typing${m[3]}`;
+        }
+        el.dataset.pbnNmShown = out;
+        if (cur !== out) el.textContent = out;
       }
       function processRow(row) { process(row); row.querySelectorAll('.' + NM).forEach(s => render(s)); }
 
@@ -2123,9 +2191,21 @@
       function refreshAll() {
         const cont = document.querySelector(CHAT);
         if (cont) processRow(cont);
+        syncTyping();
         refreshButton();
       }
+      let typingObserver = null, column = null;
+      function syncColumn() {
+        const col = document.querySelector(CHAT)?.parentElement;
+        if (!col || col === column) return;
+        if (typingObserver) typingObserver.disconnect();
+        column = col;
+        typingObserver = new MutationObserver(syncTyping);
+        typingObserver.observe(col, { childList: true, subtree: true, characterData: true });
+        syncTyping();
+      }
       function syncContainer() {
+        syncColumn();
         const cont = document.querySelector(CHAT);
         if (!cont || cont === container) return;
         if (observer) observer.disconnect();
@@ -2314,7 +2394,8 @@
       }, () => {
         clearInterval(tick);
         if (observer) observer.disconnect();
-        observer = null; container = null;
+        if (typingObserver) typingObserver.disconnect();
+        observer = null; container = null; typingObserver = null; column = null;
         document.removeEventListener('click', onChatClick);
         window.removeEventListener('storage', onStorage);
       });

@@ -351,7 +351,10 @@ Give people your own names. Someone you only know as *"A short beefcake of a man
   - the **You see:** list
   - **You look at …**
   - "Among them, …" when peering into a room
-  - `[SYSTEM]` arrival and departure lines
+  - `[SYSTEM]` lines that start with someone (arrivals, departures, "X looks at Y.")
+  - the "X is typing" indicator
+
+  Coloured short descs work too (`A <tired man> wearing a <black suit>`); switching back to the game's text restores the colours.
 - **Exact matches.** A name is tied to the exact name or short desc the game shows (capitals don't matter). If someone changes their short desc, they're a stranger again until you name the new one.
 - **Per character.** Each of your characters has their own names, so your Camarilla character doesn't recognise the people your Sabbat character met.
 - **You can tell it's yours.** Your names have a dotted gold underline and a small ✦. Hover one to see what the game actually shows.
