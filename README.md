@@ -355,7 +355,7 @@ Give people your own names. Someone you only know as *"A short beefcake of a man
   - the "X is typing" indicator
 
   Coloured short descs work too (`A <tired man> wearing a <black suit>`); switching back to the game's text restores the colours.
-- **Exact matches.** A name is tied to the exact name or short desc the game shows (capitals don't matter). If someone changes their short desc, they're a stranger again until you name the new one.
+- **Exact matches.** A name is tied to the exact name or short desc the game shows (capitals don't matter). If someone turns up with a new short desc, or the game starts showing their real name, attach that to them with **Same person as…** (below).
 - **Per character.** Each of your characters has their own names, so your Camarilla character doesn't recognise the people your Sabbat character met.
 - **You can tell it's yours.** Your names have a dotted gold underline and a small ✦. Hover one to see what the game actually shows. People you've only taken notes on (no name) get a grey dotted underline.
 
@@ -363,6 +363,8 @@ Clicking a name opens a menu:
 
 - **Name this person / You call them** — type the name and press Enter. Clearing the field and saving removes the name (notes stay).
 - **Notes** — your own notes on this person, with Markdown: `# heading`, `**bold**`, `*italic*`, `- lists`, `> quotes`, `[links](https://…)`. Click **Write notes…** (or click existing notes) to edit. Notes are saved as you type, so closing the menu or pressing Esc never loses anything; **Done** (or Ctrl+Enter) shows them formatted again.
+- **Same person as…** — for when someone you know turns up under a new desc or name (they "introduce themselves as Count Fab"): click the new one, pick who it is from your searchable list, and it joins them. From then on both show your name for them and share the notes. If the new one already had its own name or notes, they're merged in: notes are appended below a divider, the other name goes into **↺ Back to**.
+- **Also seen as** — the person's other appearances. **✕** splits one off again (or **Not them** for the one you clicked), e.g. when two people turn out to share a generic short desc. Splitting doesn't undo a merge's notes; those stay with the person.
 - **↺ Back to "…"** — the last few names you gave this person, one click to switch back.
 - **Show the game's text for them** — turns your name off for just this person without forgetting it.
 - **Forget this person** — deletes the name and notes (asks first if there are notes).

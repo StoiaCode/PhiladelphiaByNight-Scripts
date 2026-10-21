@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.2.0
+// @version      1.3.0
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -22,7 +22,7 @@
     return;
   }
 
-  const TK_VERSION = '1.2.0';
+  const TK_VERSION = '1.3.0';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -2010,7 +2010,10 @@
     ],
     actions: [{ label: 'People & notes…', run: () => namesApi?.openList() }],
     start(c) {
-      const KEY = 'pbn-names';       // { [character]: { [lowercased game text]: { orig, name, was[], off, notes? } } }
+      // { [character]: { [personId]: { looks: [game text…], name, was[], off, notes? } } }
+      // A person can have several looks (short descs, or their real name once
+      // the game shows it); the name and notes belong to the person.
+      const KEY = 'pbn-names';
       const VIEW_KEY = 'pbn-names-view'; // 'mine' | 'game'
       const MAX_WAS = 5;
       const CHAT = '.chat-container';
@@ -2020,46 +2023,94 @@
       const keyOf = s => norm(s).toLowerCase();
       const loadAll = () => { try { return JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { return {}; } };
       const loadView = () => (localStorage.getItem(VIEW_KEY) === 'game' ? 'game' : 'mine');
+      const newId = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      // 1.1/1.2 stored one entry per game text, keyed by it; each becomes a
+      // person with a single look.
+      function migrate(b) {
+        for (const [id, e] of Object.entries(b)) {
+          if (!e || Array.isArray(e.looks)) continue;
+          b[id] = { looks: [norm(e.orig || id)], name: e.name || '', was: e.was || [], off: !!e.off, ...(e.notes ? { notes: e.notes } : {}) };
+        }
+        return b;
+      }
+      const findId = (b, orig) => Object.keys(b).find(id => b[id].looks.some(l => keyOf(l) === keyOf(orig)));
+      const uniqLooks = looks => looks.filter((l, i, a) => a.findIndex(x => keyOf(x) === keyOf(l)) === i);
 
-      let book = {}, bookChar = null, view = loadView();
-      function loadBook() { bookChar = c.getCharName() || 'default'; book = loadAll()[bookChar] || {}; }
-      function update(fn) {
-        const all = loadAll();
-        const b = all[bookChar] || (all[bookChar] = {});
-        fn(b);
-        if (!Object.keys(b).length) delete all[bookChar];
+      let book = {}, index = new Map(), bookChar = null, view = loadView();
+      function reindex() {
+        index = new Map();
+        for (const [id, person] of Object.entries(book)) for (const l of person.looks) index.set(keyOf(l), id);
+      }
+      const personOf = orig => book[index.get(keyOf(orig))] || null;
+      function loadBook() { bookChar = c.getCharName() || 'default'; book = migrate(loadAll()[bookChar] || {}); reindex(); }
+      function write(all, b) {
+        for (const [id, person] of Object.entries(b)) if (!person.looks.length || (!person.name && !person.notes)) delete b[id];
+        if (Object.keys(b).length) all[bookChar] = b; else delete all[bookChar];
         localStorage.setItem(KEY, JSON.stringify(all));
         book = b;
+        reindex();
+      }
+      function update(fn) {
+        const all = loadAll();
+        const b = migrate(all[bookChar] || {});
+        fn(b);
+        write(all, b);
         refreshAll();
       }
-      const pastNames = (e, except) => [e.name, ...(e.was || [])].filter(w => w && w !== except).filter((w, i, a) => a.indexOf(w) === i).slice(0, MAX_WAS);
+      const pastNames = (names, except) => names.filter(w => w && w !== except).filter((w, i, a) => a.indexOf(w) === i).slice(0, MAX_WAS);
       // Clearing the name keeps the person if there are notes on them.
       function setName(orig, name) {
         name = norm(name);
         update(b => {
-          const k = keyOf(orig), e = b[k];
-          if (!name) {
-            if (e?.notes) { e.was = pastNames(e, ''); e.name = ''; } else delete b[k];
-            return;
-          }
-          if (e && e.name === name) { e.off = false; return; }
-          b[k] = { ...e, orig: norm(orig), name, was: e ? pastNames(e, name) : [], off: false };
+          const id = findId(b, orig), person = id && b[id];
+          if (!person) { if (name) b[newId()] = { looks: [norm(orig)], name, was: [], off: false }; return; }
+          if (person.name === name) { person.off = false; return; }
+          person.was = pastNames([person.name, ...(person.was || [])], name);
+          person.name = name;
+          person.off = false;
         });
       }
       // Called on every keystroke; the chat is only re-rendered when someone
       // gains or loses notes (that changes their marker).
       function saveNotes(orig, text) {
         const all = loadAll();
-        const b = all[bookChar] || (all[bookChar] = {});
-        const k = keyOf(orig);
-        let e = b[k];
-        const had = !!e?.notes;
-        if (text.trim()) (e || (e = b[k] = { orig: norm(orig), name: '', was: [], off: false })).notes = text;
-        else if (e) { delete e.notes; if (!e.name) delete b[k]; }
-        if (!Object.keys(b).length) delete all[bookChar];
-        localStorage.setItem(KEY, JSON.stringify(all));
-        book = all[bookChar] || {};
+        const b = migrate(all[bookChar] || {});
+        let id = findId(b, orig);
+        const had = !!(id && b[id].notes);
+        if (text.trim()) {
+          if (!id) b[id = newId()] = { looks: [norm(orig)], name: '', was: [], off: false };
+          b[id].notes = text;
+        } else if (id) delete b[id].notes;
+        write(all, b);
         if (had !== !!text.trim()) refreshAll();
+      }
+      // "Same person as…": this look joins the target. If it already belonged
+      // to someone, the two are merged: notes appended, names kept in "was".
+      function linkTo(orig, targetId) {
+        update(b => {
+          const target = b[targetId];
+          const srcId = findId(b, orig);
+          if (!target || srcId === targetId) return;
+          if (!srcId) { target.looks.push(norm(orig)); return; }
+          const src = b[srcId];
+          target.looks = uniqLooks([...target.looks, ...src.looks]);
+          if (src.notes) target.notes = target.notes ? target.notes + '\n\n---\n\n' + src.notes : src.notes;
+          if (!target.name && src.name) target.name = src.name;
+          target.was = pastNames([...(target.was || []), src.name, ...(src.was || [])], target.name);
+          delete b[srcId];
+        });
+      }
+      // "Not them": this look leaves its person and is a stranger again.
+      function detach(orig) {
+        update(b => {
+          const person = b[findId(b, orig)];
+          if (person && person.looks.length > 1) person.looks = person.looks.filter(l => keyOf(l) !== keyOf(orig));
+        });
+      }
+      function toggleView() {
+        view = view === 'mine' ? 'game' : 'mine';
+        localStorage.setItem(VIEW_KEY, view);
+        refreshAll();
       }
 
       // Small, safe Markdown for notes: everything is escaped first, then
@@ -2162,7 +2213,7 @@
         return keys.find(k => low.startsWith(k, at) && (low.length === at + k.length || NAME_END.test(low[at + k.length])));
       }
       function process(root) {
-        const keys = Object.keys(book).sort((a, b) => b.length - a.length);
+        const keys = [...index.keys()].sort((a, b) => b.length - a.length);
         // Speakers: <span class="chat-name-…">Name</span>, "Name Rolls..." on roll cards.
         root.querySelectorAll('[class*="chat-name"]').forEach(n => {
           const map = mapText(Array.from(n.childNodes));
@@ -2179,7 +2230,7 @@
           const k = savedKeyAt(low, 0, keys);
           if (k) spans.push([0, k.length]);
           const at = low.match(/ looks at (.+?)\.$/);
-          if (at && book[at[1]]) { const end = at.index + at[0].length - 1; spans.push([end - at[1].length, end]); }
+          if (at && index.has(at[1])) { const end = at.index + at[0].length - 1; spans.push([end - at[1].length, end]); }
           spans.sort((a, b) => b[0] - a[0]).forEach(([s, e]) => wrapAt(map, s, e));
         });
         // look output: "• Name <em>(breathing)</em>", "You look at Name <em>…" /
@@ -2195,13 +2246,13 @@
           p.querySelectorAll(':scope > em').forEach(em => {
             const map = mapText(Array.from(em.childNodes));
             const m = map.text.match(/^(Among them, )(.+?)\.?$/);
-            if (m && book[keyOf(m[2])]) wrapAt(map, m[1].length, m[1].length + m[2].length);
+            if (m && index.has(keyOf(m[2]))) wrapAt(map, m[1].length, m[1].length + m[2].length);
           });
         });
       }
       function render(span, forLog = false) {
         const orig = span.dataset.pbnNmOrig;
-        const e = book[keyOf(orig)];
+        const e = personOf(orig);
         const mine = !!e?.name && (forLog || (view === 'mine' && !e.off));
         const html = span.dataset.pbnNmHtml;
         if (mine || !html) {
@@ -2227,7 +2278,7 @@
         const cur = el.textContent;
         if (el.dataset.pbnNmGame === undefined || cur !== el.dataset.pbnNmShown) el.dataset.pbnNmGame = cur;
         const game = el.dataset.pbnNmGame;
-        const swap = who => { const e = book[keyOf(who)]; return e?.name && view === 'mine' && !e.off ? e.name : who; };
+        const swap = who => { const e = personOf(who); return e?.name && view === 'mine' && !e.off ? e.name : who; };
         let out = game;
         const m = game.match(/^(.+?) (is|are) typing(.*)$/);
         if (m) {
@@ -2334,6 +2385,13 @@
         .pbn-nm-notes-hint { flex: 1; color: #9a8a7a; font-size: .9rem; font-style: italic; line-height: 1.35; }
         .pbn-nm-filter { display: block; width: calc(100% - 32px); box-sizing: border-box; margin: 2px 16px 6px; }
         .pbn-nm-list__mark { color: #9a8a7a; font-size: .9rem; }
+        .pbn-nm-look { display: flex; align-items: center; gap: 8px; padding: 2px 8px 2px 16px; color: #c4b49a; font-style: italic; line-height: 1.35; }
+        .pbn-nm-look span { flex: 1; overflow-wrap: anywhere; }
+        .pbn-nm-look button {
+          flex: 0 0 auto; padding: 4px 9px; border: 0; border-radius: 4px; background: none; cursor: pointer;
+          color: #9a8a7a; font: inherit; font-style: normal; font-size: .95rem;
+        }
+        .pbn-nm-look button:hover { color: #e07062; background: #5a121233; }
       `);
 
       // ---- Menus
@@ -2351,7 +2409,7 @@
       function notesSection(menu, orig) {
         const box = c.el('div');
         const showView = () => {
-          const notes = book[keyOf(orig)]?.notes || '';
+          const notes = personOf(orig)?.notes || '';
           box.textContent = '';
           if (!notes) {
             box.append(item('✎ Write notes…', showEdit));
@@ -2363,7 +2421,7 @@
           box.append(shown);
         };
         const showEdit = () => {
-          const ta = c.el('textarea', { className: 'pbn-nm-notes-edit', value: book[keyOf(orig)]?.notes || '', spellcheck: true,
+          const ta = c.el('textarea', { className: 'pbn-nm-notes-edit', value: personOf(orig)?.notes || '', spellcheck: true,
             placeholder: 'Who they are, where you met, what they want, what they owe you…' });
           ta.setAttribute('aria-label', 'Notes');
           ta.addEventListener('input', () => saveNotes(orig, ta.value));
@@ -2384,7 +2442,8 @@
       }
 
       function renderEditor(menu, orig, fromList) {
-        const e = book[keyOf(orig)];
+        const e = personOf(orig);
+        const again = () => { renderEditor(menu, orig, fromList); currentPop?.place(); };
         menu.textContent = '';
         const input = c.el('input', { type: 'text', className: 'pbn-nm-input', value: e?.name || '', placeholder: 'Your name for them…', spellcheck: false });
         input.setAttribute('aria-label', 'Your name for them');
@@ -2394,49 +2453,78 @@
         input.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); commit(); } });
         menu.append(
           c.el('div', { className: 'pbn-tk-menu__head', textContent: 'The game shows' }),
-          c.el('div', { className: 'pbn-nm-orig', textContent: orig }),
+          c.el('div', { className: 'pbn-nm-orig', textContent: orig }));
+        const others = (e?.looks || []).filter(l => keyOf(l) !== keyOf(orig));
+        if (others.length) {
+          menu.append(c.el('div', { className: 'pbn-tk-menu__head', textContent: 'Also seen as' }));
+          others.forEach(l => {
+            const x = c.el('button', { type: 'button', textContent: '✕', title: 'Not the same person: split this one off' });
+            x.setAttribute('aria-label', 'Split off ' + l);
+            x.addEventListener('click', () => { detach(l); again(); });
+            menu.append(c.el('div', { className: 'pbn-nm-look' }, c.el('span', { textContent: l }), x));
+          });
+        }
+        menu.append(
           c.el('div', { className: 'pbn-tk-menu__head', textContent: e?.name ? 'You call them' : 'Name this person' }),
           c.el('div', { className: 'pbn-nm-form' }, input, save));
         notesSection(menu, orig);
+        menu.append(sep());
+        const known = Object.values(book).filter(x => x !== e).length;
+        const same = item(e ? 'Same person as… (merge with someone you know)' : 'Same person as… (someone you know)', () => {
+          renderList(menu, { pickFor: orig, back: again });
+          currentPop?.place();
+        });
+        same.disabled = !known;
+        if (!known) same.title = 'You have nobody else saved yet';
+        menu.append(same);
+        if (others.length) menu.append(item('Not them: split “' + orig + '” off', () => { detach(orig); again(); }));
         if (e) {
-          menu.append(sep());
-          (e.was || []).forEach(w => menu.append(item(`↺ Back to “${w}”`, () => { setName(orig, w); close(); })));
+          (e.was || []).forEach(w => menu.append(item('↺ Back to “' + w + '”', () => { setName(orig, w); close(); })));
           if (e.name) menu.append(item(e.off ? 'Show my name for them again' : "Show the game's text for them", () => {
-            update(b => { const x = b[keyOf(orig)]; if (x) x.off = !x.off; });
+            update(b => { const x = b[findId(b, orig)]; if (x) x.off = !x.off; });
             close();
           }));
           menu.append(item('Forget this person', () => {
-            if (book[keyOf(orig)]?.notes && !confirm(`Delete your name and notes for “${orig}”? This can't be undone.`)) return;
-            update(b => { delete b[keyOf(orig)]; });
+            if (personOf(orig)?.notes && !confirm('Delete your name and notes for “' + (e.name || orig) + '”? This can\'t be undone.')) return;
+            update(b => { delete b[findId(b, orig)]; });
             close();
           }, 'pbn-nm-forget'));
         }
         if (fromList) menu.append(sep(), item('‹ Everyone', () => { renderList(menu); currentPop?.place(); }));
-        menu.append(c.el('div', { className: 'pbn-tk-menu__note', textContent: `Saved for ${bookChar} only. It matches this exact text, so a changed short desc needs naming again.` }));
+        menu.append(c.el('div', { className: 'pbn-tk-menu__note', textContent: 'Saved for ' + bookChar + ' only. It matches this exact text; if they turn up with a new desc or name, click that one and use “Same person as…”.' }));
         if (!e?.notes || e.name) setTimeout(() => { input.focus(); input.select(); }, 0);
       }
-      function renderList(menu) {
+      // Everyone saved for this character, searchable. With pickFor it's the
+      // "Same person as…" chooser for that look.
+      function renderList(menu, { pickFor = null, back = null } = {}) {
         menu.textContent = '';
-        menu.append(c.el('div', { className: 'pbn-tk-menu__head', textContent: `People — ${bookChar}` }));
-        const entries = Object.values(book).sort((a, b) => (a.name || a.orig).localeCompare(b.name || b.orig));
+        const self = pickFor ? personOf(pickFor) : null;
+        menu.append(c.el('div', { className: 'pbn-tk-menu__head', textContent: pickFor ? 'Who is this?' : 'People — ' + bookChar }));
+        if (pickFor) menu.append(c.el('div', { className: 'pbn-nm-orig', textContent: pickFor }));
+        const entries = Object.entries(book).filter(([, x]) => x !== self)
+          .sort(([, a], [, b]) => (a.name || a.looks[0]).localeCompare(b.name || b.looks[0]));
         if (!entries.length) {
           menu.append(c.el('div', { className: 'pbn-tk-menu__note', textContent: 'Nobody yet. Click a name or short desc in the chat to name that person or take notes on them.' }));
         } else {
           const filter = c.el('input', { type: 'text', className: 'pbn-nm-input pbn-nm-filter', placeholder: 'Find someone (name, desc or notes)…', spellcheck: false });
           filter.setAttribute('aria-label', 'Find someone');
           const list = c.el('div', { className: 'pbn-nm-list' });
-          const rows = entries.map(e => {
-            const marks = [e.notes ? '✎ notes' : '', e.off ? 'showing game text' : ''].filter(Boolean).join(' · ');
+          const rows = entries.map(([id, x]) => {
+            const marks = [x.notes ? '✎ notes' : '', x.off ? 'showing game text' : ''].filter(Boolean).join(' · ');
+            const looks = x.name ? x.looks : x.looks.slice(1);
             const b = c.el('button', { type: 'button', className: 'pbn-tk-menu__item' },
-              c.el('span', { textContent: e.name || e.orig }, marks ? c.el('span', { className: 'pbn-nm-list__mark', textContent: `  ${marks}` }) : null),
-              e.name ? c.el('span', { className: 'pbn-nm-list__orig', textContent: e.orig }) : null);
-            b.addEventListener('click', () => { renderEditor(menu, e.orig, true); currentPop?.place(); });
+              c.el('span', { textContent: x.name || x.looks[0] }, marks ? c.el('span', { className: 'pbn-nm-list__mark', textContent: '  ' + marks }) : null),
+              looks.length ? c.el('span', { className: 'pbn-nm-list__orig', textContent: looks.join(' · ') }) : null);
+            b.addEventListener('click', () => {
+              if (pickFor) { linkTo(pickFor, id); back(); }
+              else { renderEditor(menu, x.looks[0], true); currentPop?.place(); }
+            });
             list.append(b);
-            return [b, `${e.name} ${e.orig} ${e.notes || ''}`.toLowerCase()];
+            return [b, [x.name, ...x.looks, ...(x.was || []), x.notes || ''].join(' ').toLowerCase()];
           });
           filter.addEventListener('input', () => {
             const q = filter.value.trim().toLowerCase();
-            rows.forEach(([b, s]) => { b.style.display = !q || s.includes(q) ? '' : 'none'; });
+            rows.forEach(([b, text]) => { b.style.display = !q || text.includes(q) ? '' : 'none'; });
           });
           filter.addEventListener('keydown', ev => {
             if (ev.key !== 'Enter') return;
@@ -2446,7 +2534,12 @@
           menu.append(filter, list);
           setTimeout(() => filter.focus(), 0);
         }
-        menu.append(sep(), item(view === 'mine' ? "Show the game's text everywhere" : 'Show my names again', () => { toggleView(); close(); }));
+        if (pickFor) {
+          if (self && (self.name || self.notes)) menu.append(c.el('div', { className: 'pbn-tk-menu__note', textContent: 'Your name and notes for this one are merged into theirs.' }));
+          menu.append(sep(), item('‹ Back', back));
+        } else {
+          menu.append(sep(), item(view === 'mine' ? "Show the game's text everywhere" : 'Show my names again', () => { toggleView(); close(); }));
+        }
       }
       function newMenu() {
         const menu = c.el('div', { className: 'pbn-tk-menu pbn-nm-menu' });
