@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.4.0
+// @version      1.4.1
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -22,7 +22,7 @@
     return;
   }
 
-  const TK_VERSION = '1.4.0';
+  const TK_VERSION = '1.4.1';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -2631,7 +2631,6 @@
       const saveDos = () => localStorage.setItem(DOS_KEY, JSON.stringify(dos));
       const tabs = [];                 // look keys, in tab order
       const tabOrig = new Map();       // look key -> game text as shown
-      const seenPeople = new Set();    // game texts seen as a speaker or in "You see:" this session
       let activeTab = null, win = null, dragAt = 0, looksCache = null;
 
       const looksAll = () => looksCache || (looksCache = loadJSON(LOOKS_KEY, {}));
@@ -2653,9 +2652,8 @@
           .filter(Boolean).sort((a, b) => b.at - a.at)[0] || null;
       }
 
-      // "You look at <name>" rows. Only people: someone with court standing or
-      // gear lines, someone seen as a speaker / in "You see:", or someone
-      // you've already named, noted or looked at. Objects are left alone.
+      // "You look at <name>" rows. /look only ever targets characters (PCs or
+      // NPCs), so every one is a person.
       function lookOf(row) {
         const p = row.querySelector(':scope > p.look-output');
         const first = p?.firstChild;
@@ -2664,8 +2662,6 @@
         if (!span?.classList?.contains(NM)) return null;
         return { p, span, orig: span.dataset.pbnNmOrig, key: keyOf(span.dataset.pbnNmOrig) };
       }
-      const isPerson = (row, l) => !!row.querySelector('.look-political, .look-equipment')
-        || seenPeople.has(l.key) || !!personOf(l.orig) || !!looksFor()[l.key];
       function extractLook(row) {
         const box = document.createElement('div');
         for (const n of row.childNodes) if (!n.classList?.contains('pbn-dos-stub')) box.append(n.cloneNode(true));
@@ -2708,12 +2704,8 @@
         for (const row of rows) {
           if (row.dataset.pbnDos) continue;
           row.dataset.pbnDos = '1';
-          row.querySelectorAll('.' + NM).forEach(sp => {
-            const prev = sp.previousSibling;
-            if (!(prev?.nodeType === 3 && /You look at\s*$/.test(prev.nodeValue))) seenPeople.add(keyOf(sp.dataset.pbnNmOrig));
-          });
           const l = lookOf(row);
-          if (!l || !isPerson(row, l)) continue;
+          if (!l) continue;
           const saved = saveLook(l.key, { ...extractLook(row), at: Date.now() }, !live);
           if (FOLD) fold(row, l);
           if (live && AUTO_OPEN) openDossier(l.orig, { quiet: true });

@@ -367,7 +367,7 @@ Give people your own names. Someone you only know as *"A short beefcake of a man
 - your notes on them, editable right there,
 - **their look**: the last `/look` you did on them, with the time you saw it. Links in it (people often put image links in their descs) are clickable and open in a new tab.
 
-When you `/look` at someone, the look is saved (replacing the previous one for that person) and their dossier opens. In the chat the whole description folds into one line, **You look at Raven · Dossier · Show here**, so it doesn't bury the scene; **Show here** unfolds that one. Looks at objects are left alone.
+When you `/look` at someone, the look is saved (replacing the previous one for that person) and their dossier opens. In the chat the whole description folds into one line, **You look at Raven · Dossier · Show here**, so it doesn't bury the scene; **Show here** unfolds that one. NPCs get dossiers too.
 
 The window can be dragged by its header (or tabs), resized from the bottom-right corner, collapsed (▾, or double-click the header) and closed (✕). **A− / A+** change the text size and **Aa** switches between a plain sans-serif and a serif font. Position, size, font and text size are remembered. Each of your characters keeps their own saved looks (the last 200 people).
 
