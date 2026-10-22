@@ -37,7 +37,7 @@ press **Alt+Shift+T** anywhere on the site).
   clearing the site's data would wipe.
 
 New features are added to the toolkit, and some exist only there (see
-[Personal Names & Notes](#personal-names--notes-toolkit-only)).
+[Personal Names, Notes & Dossiers](#personal-names-notes--dossiers-toolkit-only)).
 
 ### The separate scripts
 
@@ -341,7 +341,7 @@ The list is stored per browser/device. This script has no configurable options.
 
 ---
 
-## Personal Names & Notes (toolkit only)
+## Personal Names, Notes & Dossiers (toolkit only)
 
 Give people your own names. Someone you only know as *"A short beefcake of a man"* introduces himself as Arsenije: click his short desc in the chat, type the name, and from then on he shows up as **Arsenije** wherever the game names him. If he re-introduces himself as Count Fabulous next week, click again and rename him.
 
@@ -359,7 +359,23 @@ Give people your own names. Someone you only know as *"A short beefcake of a man
 - **Per character.** Each of your characters has their own names, so your Camarilla character doesn't recognise the people your Sabbat character met.
 - **You can tell it's yours.** Your names have a dotted gold underline and a small ✦. Hover one to see what the game actually shows. People you've only taken notes on (no name) get a grey dotted underline.
 
-Clicking a name opens a menu:
+### Dossiers
+
+**Clicking a name** in the chat opens that person's **dossier**: a window that floats over the page with one tab per person you've opened. A tab shows:
+
+- your name for them and their other appearances (with a **Name · link…** button for renaming and "Same person as…"),
+- your notes on them, editable right there,
+- **their look**: the last `/look` you did on them, with the time you saw it. Links in it (people often put image links in their descs) are clickable and open in a new tab.
+
+When you `/look` at someone, the look is saved (replacing the previous one for that person) and their dossier opens. In the chat the whole description folds into one line, **You look at Raven · Dossier · Show here**, so it doesn't bury the scene; **Show here** unfolds that one. Looks at objects are left alone.
+
+The window can be dragged by its header (or tabs), resized from the bottom-right corner, collapsed (▾, or double-click the header) and closed (✕). **A− / A+** change the text size and **Aa** switches between a plain sans-serif and a serif font. Position, size, font and text size are remembered. Each of your characters keeps their own saved looks (the last 200 people).
+
+All three behaviours can be switched off in the toolkit panel: dossiers on click, opening on `/look`, and folding looks in the chat.
+
+### The quick menu
+
+**Right-click** a name (or Shift/Alt-click it) for the quick menu. It's also what clicking opens when dossiers are switched off:
 
 - **Name this person / You call them** — type the name and press Enter. Clearing the field and saving removes the name (notes stay).
 - **Notes** — your own notes on this person, with Markdown: `# heading`, `**bold**`, `*italic*`, `- lists`, `> quotes`, `[links](https://…)`. Click **Write notes…** (or click existing notes) to edit. Notes are saved as you type, so closing the menu or pressing Esc never loses anything; **Done** (or Ctrl+Enter) shows them formatted again.
@@ -369,11 +385,11 @@ Clicking a name opens a menu:
 - **Show the game's text for them** — turns your name off for just this person without forgetting it.
 - **Forget this person** — deletes the name and notes (asks first if there are notes).
 
-A **badge icon** by the command box flips *everything* between your names and the game's text, which is handy right before a screenshot. It's gold while your names are showing. **Right-click** it to look people up: everyone you've named or taken notes on for this character, with a search box that matches names, short descs and note text (also under **People & notes…** in the toolkit panel). Press Enter to open the first match.
+A **badge icon** by the command box flips *everything* between your names and the game's text, which is handy right before a screenshot. It's gold while your names are showing. **Right-click** it to look people up (picking someone opens their dossier): everyone you've named or taken notes on for this character, with a search box that matches names, short descs and note text (also under **People & notes…** in the toolkit panel). Press Enter to open the first match.
 
 **Chat Log:** Search finds people under either name. **Save Log** writes the game's text by default; switch *Save Log writes* to *my names* in the toolkit panel to get your names in the file instead.
 
-Names and notes are stored per browser/device and included in the toolkit's Export/Import, which is worth doing now and then since clearing the site's data wipes them.
+Names, notes and saved looks are stored per browser/device and included in the toolkit's Export/Import, which is worth doing now and then since clearing the site's data wipes them.
 
 ---
 

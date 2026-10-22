@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.3.0
+// @version      1.4.0
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -22,7 +22,7 @@
     return;
   }
 
-  const TK_VERSION = '1.3.0';
+  const TK_VERSION = '1.4.0';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -2001,10 +2001,13 @@
 
   defineModule({
     id: 'names',
-    name: 'Personal Names & Notes',
-    description: 'Click a name or short desc in the chat to give that person your own name and keep notes on them (Markdown). Exact matches only, kept per character.',
+    name: 'Personal Names, Notes & Dossiers',
+    description: "Click a name or short desc in the chat for that person's dossier: your own name for them, your notes (Markdown) and their last /look. Exact matches only, kept per character.",
     note: "Your names get a dotted gold underline and a ✦, people you only have notes on a grey dotted underline. The badge icon by the command box flips between your names and the game's text; right-click it to find anyone you've named or noted.",
     settings: [
+      { key: 'cards', label: 'Dossiers: clicking a name opens their dossier window (right-click for the quick menu)', type: 'toggle', default: true },
+      { key: 'autoOpen', label: 'Open the dossier when you /look at someone', type: 'toggle', default: true },
+      { key: 'fold', label: 'Fold /look descriptions in the chat into one line', type: 'toggle', default: true },
       { key: 'log', label: 'Save Log writes', type: 'select', default: 'game',
         options: [['game', "the game's text"], ['mine', 'my names']] },
     ],
@@ -2172,7 +2175,7 @@
             for (let i = 0; i < t.length; i++) add(/\s/.test(t[i]) ? ' ' : t[i], [n, i]);
           } else if (n.nodeType === 1) {
             if (n.classList.contains(NM)) add(OBJ, null);
-            else n.childNodes.forEach(walk);
+            else if (n.getAttribute('role') !== 'img') n.childNodes.forEach(walk); // 🥀 new-player marker etc.
           }
         };
         nodes.forEach(walk);
@@ -2290,7 +2293,11 @@
         el.dataset.pbnNmShown = out;
         if (cur !== out) el.textContent = out;
       }
-      function processRow(row) { process(row); row.querySelectorAll('.' + NM).forEach(s => render(s)); }
+      function processRow(row, live = false) {
+        process(row);
+        row.querySelectorAll('.' + NM).forEach(s => render(s));
+        dossierScan(row, live);
+      }
 
       // ---- Keeping the chat current. Observer callbacks run before paint, so
       // a new line never flashes the game text first.
@@ -2300,6 +2307,7 @@
         if (cont) processRow(cont);
         syncTyping();
         refreshButton();
+        renderDossier(false);
       }
       let typingObserver = null, column = null;
       function syncColumn() {
@@ -2325,7 +2333,7 @@
             const row = n.closest(ROW);
             if (row) rows.add(row); else n.querySelectorAll(ROW).forEach(r => rows.add(r));
           }
-          rows.forEach(processRow); // re-runs on our own spans find nothing new, so this settles
+          rows.forEach(r => processRow(r, true)); // re-runs on our own spans find nothing new, so this settles
         });
         observer.observe(cont, { childList: true, subtree: true });
       }
@@ -2469,6 +2477,7 @@
           c.el('div', { className: 'pbn-nm-form' }, input, save));
         notesSection(menu, orig);
         menu.append(sep());
+        if (CARDS && !menu.closest('#pbn-dossier')) menu.append(item('Open their dossier', () => { close(); openDossier(orig); }));
         const known = Object.values(book).filter(x => x !== e).length;
         const same = item(e ? 'Same person as… (merge with someone you know)' : 'Same person as… (someone you know)', () => {
           renderList(menu, { pickFor: orig, back: again });
@@ -2517,6 +2526,7 @@
               looks.length ? c.el('span', { className: 'pbn-nm-list__orig', textContent: looks.join(' · ') }) : null);
             b.addEventListener('click', () => {
               if (pickFor) { linkTo(pickFor, id); back(); }
+              else if (CARDS) { close(); openDossier(x.looks[0]); }
               else { renderEditor(menu, x.looks[0], true); currentPop?.place(); }
             });
             list.append(b);
@@ -2565,6 +2575,13 @@
         if (!span || !window.getSelection()?.isCollapsed) return; // let text selection through
         e.preventDefault();
         e.stopPropagation();
+        if (CARDS && !e.altKey && !e.shiftKey) openDossier(span.dataset.pbnNmOrig);
+        else openEditor(span, span.dataset.pbnNmOrig);
+      }
+      function onChatContext(e) {
+        const span = e.target.closest?.(`${CHAT} .${NM}`);
+        if (!span || !CARDS) return;
+        e.preventDefault();
         openEditor(span, span.dataset.pbnNmOrig);
       }
 
@@ -2600,11 +2617,399 @@
         refreshAll();
       }
 
+      // ---- Dossiers: one floating window with a tab per person: your name and
+      // notes for them, plus the last /look you did on them (saved, and
+      // replaced by the next one). A /look in the chat folds to one line.
+      const CARDS = opt('names', 'cards', true);
+      const AUTO_OPEN = CARDS && opt('names', 'autoOpen', true);
+      const FOLD = CARDS && opt('names', 'fold', true);
+      const DOS_KEY = 'pbn-dossier';         // window: { x, y, w, h, font, size, folded }
+      const LOOKS_KEY = 'pbn-dossier-looks'; // { [character]: { [lowercased game text]: { html, sub, at } } }
+      const MAX_LOOKS = 200;                 // per character, oldest dropped first
+      const loadJSON = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || 'null') || d; } catch (e) { return d; } };
+      const dos = Object.assign({ x: null, y: 80, w: 460, h: 560, font: 'sans', size: 16, folded: false }, loadJSON(DOS_KEY, {}));
+      const saveDos = () => localStorage.setItem(DOS_KEY, JSON.stringify(dos));
+      const tabs = [];                 // look keys, in tab order
+      const tabOrig = new Map();       // look key -> game text as shown
+      const seenPeople = new Set();    // game texts seen as a speaker or in "You see:" this session
+      let activeTab = null, win = null, dragAt = 0, looksCache = null;
+
+      const looksAll = () => looksCache || (looksCache = loadJSON(LOOKS_KEY, {}));
+      const looksFor = () => looksAll()[bookChar] || {};
+      function saveLook(key, data, onlyIfMissing) {
+        const all = looksAll();
+        const store = all[bookChar] || (all[bookChar] = {});
+        if (onlyIfMissing && store[key]) return false;
+        store[key] = data;
+        const keys = Object.keys(store);
+        if (keys.length > MAX_LOOKS) keys.sort((a, b) => store[a].at - store[b].at).slice(0, keys.length - MAX_LOOKS).forEach(k => delete store[k]);
+        try { localStorage.setItem(LOOKS_KEY, JSON.stringify(all)); } catch (e) { LOG('names: could not save a look', e); }
+        return true;
+      }
+      // The newest /look among all of a person's appearances.
+      function latestLook(orig) {
+        const store = looksFor();
+        return (personOf(orig)?.looks || [orig]).map(l => store[keyOf(l)] && { ...store[keyOf(l)], as: l })
+          .filter(Boolean).sort((a, b) => b.at - a.at)[0] || null;
+      }
+
+      // "You look at <name>" rows. Only people: someone with court standing or
+      // gear lines, someone seen as a speaker / in "You see:", or someone
+      // you've already named, noted or looked at. Objects are left alone.
+      function lookOf(row) {
+        const p = row.querySelector(':scope > p.look-output');
+        const first = p?.firstChild;
+        if (!first || first.nodeType !== 3 || !/^\s*You look at\s*$/.test(first.nodeValue)) return null;
+        const span = first.nextSibling;
+        if (!span?.classList?.contains(NM)) return null;
+        return { p, span, orig: span.dataset.pbnNmOrig, key: keyOf(span.dataset.pbnNmOrig) };
+      }
+      const isPerson = (row, l) => !!row.querySelector('.look-political, .look-equipment')
+        || seenPeople.has(l.key) || !!personOf(l.orig) || !!looksFor()[l.key];
+      function extractLook(row) {
+        const box = document.createElement('div');
+        for (const n of row.childNodes) if (!n.classList?.contains('pbn-dos-stub')) box.append(n.cloneNode(true));
+        const p = box.querySelector('p.look-output');
+        let sub = '';
+        // the "You look at <name> <em>(short desc)</em>" line goes; its short desc is kept
+        while (p.firstChild && p.firstChild.nodeName !== 'BR') {
+          if (p.firstChild.nodeName === 'EM') sub = norm(p.firstChild.textContent).replace(/^\((.*)\)$/, '$1');
+          p.firstChild.remove();
+        }
+        p.firstChild?.remove();
+        p.removeAttribute('data-pbn-ts');
+        box.querySelectorAll('.' + NM).forEach(sp => {
+          if (sp.dataset.pbnNmHtml) sp.outerHTML = sp.dataset.pbnNmHtml; else sp.replaceWith(sp.dataset.pbnNmOrig);
+        });
+        for (const n of Array.from(box.childNodes)) if (n.nodeName === 'BR' || (n.nodeType === 3 && !n.nodeValue.trim())) n.remove();
+        box.querySelectorAll('p').forEach(el => {
+          while (el.lastChild && (el.lastChild.nodeName === 'BR' || (el.lastChild.nodeType === 3 && !el.lastChild.nodeValue.trim()))) el.lastChild.remove();
+          if (!el.childNodes.length) el.remove();
+        });
+        return { html: box.innerHTML.trim(), sub };
+      }
+      function fold(row, l) {
+        if (row.querySelector(':scope > .pbn-dos-stub')) return;
+        const stub = c.el('p', { className: 'pbn-dos-stub' });
+        if (l.p.dataset.pbnTs) stub.dataset.pbnTs = l.p.dataset.pbnTs;
+        const open = c.el('button', { type: 'button', className: 'pbn-dos-stub__btn', textContent: 'Dossier', title: 'Open their dossier' });
+        open.addEventListener('click', () => openDossier(l.orig));
+        const show = c.el('button', { type: 'button', className: 'pbn-dos-stub__btn', textContent: 'Show here', title: 'Unfold this look in the chat' });
+        show.addEventListener('click', () => { row.classList.remove('pbn-dos-folded'); stub.remove(); });
+        stub.append('You look at ', l.span.cloneNode(true), open, show);
+        row.classList.add('pbn-dos-folded');
+        row.append(stub);
+      }
+      // Rows are scanned once. live = arrived just now (not already on the
+      // page), so it may replace a saved look and open the dossier.
+      function dossierScan(root, live) {
+        if (!CARDS) return;
+        const rows = root.matches?.(ROW) ? [root] : Array.from(root.querySelectorAll(ROW));
+        for (const row of rows) {
+          if (row.dataset.pbnDos) continue;
+          row.dataset.pbnDos = '1';
+          row.querySelectorAll('.' + NM).forEach(sp => {
+            const prev = sp.previousSibling;
+            if (!(prev?.nodeType === 3 && /You look at\s*$/.test(prev.nodeValue))) seenPeople.add(keyOf(sp.dataset.pbnNmOrig));
+          });
+          const l = lookOf(row);
+          if (!l || !isPerson(row, l)) continue;
+          const saved = saveLook(l.key, { ...extractLook(row), at: Date.now() }, !live);
+          if (FOLD) fold(row, l);
+          if (live && AUTO_OPEN) openDossier(l.orig, { quiet: true });
+          else if (saved) renderDossier(false);
+        }
+      }
+
+      // Look text is the game's own (already sanitised) HTML; this is a second
+      // line of defence before it goes back on the page.
+      function cleanHtml(html) {
+        const tpl = document.createElement('template');
+        tpl.innerHTML = html;
+        tpl.content.querySelectorAll('script, style, iframe, object, embed, link, meta').forEach(n => n.remove());
+        tpl.content.querySelectorAll('*').forEach(n => {
+          for (const a of Array.from(n.attributes)) if (/^on/i.test(a.name)) n.removeAttribute(a.name);
+        });
+        return tpl.content;
+      }
+      // Bare http(s) URLs (image links in descs) become links; existing links
+      // open in a new tab, and anything that isn't http(s) stops being one.
+      function linkify(root) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        const nodes = [];
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) if (!n.parentElement?.closest('a') && /https?:\/\//i.test(n.nodeValue)) nodes.push(n);
+        for (const n of nodes) {
+          const t = n.nodeValue, frag = document.createDocumentFragment();
+          let last = 0;
+          for (const m of t.matchAll(/https?:\/\/[^\s<>"'\])]*[^\s<>"'\]).,;:!?]/gi)) {
+            frag.append(t.slice(last, m.index), c.el('a', { href: m[0], textContent: m[0] }));
+            last = m.index + m[0].length;
+          }
+          frag.append(t.slice(last));
+          n.replaceWith(frag);
+        }
+        root.querySelectorAll('a').forEach(a => {
+          if (!/^https?:\/\//i.test(a.getAttribute('href') || '')) { a.removeAttribute('href'); return; }
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+        });
+      }
+      const when = at => new Date(at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+      function placeDossier() {
+        if (!win) return;
+        const w = win.offsetWidth;
+        const x = Math.min(Math.max(dos.x ?? (window.innerWidth - w - 24), 80 - w), window.innerWidth - 80);
+        const y = Math.min(Math.max(dos.y, 0), window.innerHeight - 40);
+        win.style.left = x + 'px';
+        win.style.top = y + 'px';
+      }
+      function applyLook() {
+        win.classList.toggle('pbn-dos--serif', dos.font === 'serif');
+        win.classList.toggle('pbn-dos--folded', !!dos.folded);
+        win.style.setProperty('--pbn-dos-size', dos.size + 'px');
+        win.style.width = dos.w + 'px';
+        win.style.height = dos.folded ? '' : dos.h + 'px';
+        const f = win.querySelector('.pbn-dos__fold');
+        f.textContent = dos.folded ? '▸' : '▾';
+        f.title = dos.folded ? 'Expand' : 'Collapse';
+        placeDossier();
+      }
+      function ensureWin() {
+        if (win) return win;
+        const tool = (text, title, fn, cls = '') => {
+          const b = c.el('button', { type: 'button', className: 'pbn-dos__tool ' + cls, textContent: text, title });
+          b.setAttribute('aria-label', title);
+          b.addEventListener('click', fn);
+          return b;
+        };
+        const size = d => () => { dos.size = Math.min(26, Math.max(12, dos.size + d)); saveDos(); applyLook(); };
+        const tabsBar = c.el('div', { className: 'pbn-dos__tabs' });
+        tabsBar.setAttribute('role', 'tablist');
+        const head = c.el('div', { className: 'pbn-dos__head', title: 'Drag to move · double-click to collapse' }, tabsBar,
+          c.el('div', { className: 'pbn-dos__tools' },
+            tool('A−', 'Smaller text', size(-1)),
+            tool('A+', 'Larger text', size(1)),
+            tool('Aa', 'Switch between sans-serif and serif', () => { dos.font = dos.font === 'serif' ? 'sans' : 'serif'; saveDos(); applyLook(); }),
+            tool('▾', 'Collapse', () => { dos.folded = !dos.folded; saveDos(); applyLook(); }, 'pbn-dos__fold'),
+            tool('✕', 'Close the dossier window', closeDossier)));
+        win = c.el('div', { id: 'pbn-dossier' }, head, c.el('div', { className: 'pbn-dos__body' }));
+        win.setAttribute('role', 'dialog');
+        win.setAttribute('aria-label', 'Dossiers');
+        head.addEventListener('dblclick', e => { if (e.target.closest('button')) return; dos.folded = !dos.folded; saveDos(); applyLook(); });
+        // Drag by the header (tabs included, once the pointer has moved a bit).
+        head.addEventListener('pointerdown', ev => {
+          if (ev.button !== 0 || ev.target.closest('.pbn-dos__tool, .pbn-dos__tab-x')) return;
+          const sx = ev.clientX, sy = ev.clientY, r = win.getBoundingClientRect();
+          let moved = false;
+          const move = e => {
+            const dx = e.clientX - sx, dy = e.clientY - sy;
+            if (!moved && Math.hypot(dx, dy) < 5) return;
+            if (!moved) { moved = true; head.setPointerCapture(ev.pointerId); }
+            dos.x = r.left + dx;
+            dos.y = r.top + dy;
+            placeDossier();
+          };
+          const up = () => {
+            head.removeEventListener('pointermove', move);
+            head.removeEventListener('pointerup', up);
+            head.removeEventListener('pointercancel', up);
+            if (moved) { dragAt = Date.now(); saveDos(); }
+          };
+          head.addEventListener('pointermove', move);
+          head.addEventListener('pointerup', up);
+          head.addEventListener('pointercancel', up);
+        });
+        // Resizing (bottom-right corner) is remembered.
+        let resizeT = null;
+        new ResizeObserver(() => {
+          if (dos.folded || win.hidden) return;
+          clearTimeout(resizeT);
+          resizeT = setTimeout(() => {
+            if (dos.folded || win.hidden) return;
+            dos.w = win.offsetWidth;
+            dos.h = win.offsetHeight;
+            saveDos();
+          }, 300);
+        }).observe(win);
+        document.body.append(win);
+        applyLook();
+        return win;
+      }
+      function openDossier(orig, { quiet = false } = {}) {
+        orig = norm(orig);
+        const k = keyOf(orig);
+        const person = personOf(orig);
+        let t = tabs.find(x => x === k || (person && personOf(tabOrig.get(x)) === person));
+        if (!t) { t = k; tabs.push(k); tabOrig.set(k, orig); }
+        activeTab = t;
+        ensureWin();
+        win.hidden = false;
+        if (!quiet && dos.folded) { dos.folded = false; saveDos(); applyLook(); }
+        renderDossier(true);
+      }
+      function closeTab(t) {
+        const i = tabs.indexOf(t);
+        if (i < 0) return;
+        tabs.splice(i, 1);
+        if (activeTab === t) activeTab = tabs[Math.min(i, tabs.length - 1)] || null;
+        renderDossier(true);
+      }
+      function closeDossier() {
+        tabs.length = 0;
+        activeTab = null;
+        if (win) { win.hidden = true; win._parts = null; }
+      }
+      function renderDossier(full) {
+        if (!win || win.hidden) return;
+        // Tabs that turned out to be the same person ("Same person as…") merge.
+        const seen = new Set(), keep = [];
+        for (const t of tabs) {
+          const id = index.get(t) || 'look:' + t;
+          if (seen.has(id)) { if (activeTab === t) activeTab = keep.find(k => (index.get(k) || 'look:' + k) === id); continue; }
+          seen.add(id);
+          keep.push(t);
+        }
+        tabs.splice(0, tabs.length, ...keep);
+        if (!tabs.length) { closeDossier(); return; }
+        if (!tabs.includes(activeTab)) activeTab = tabs[tabs.length - 1];
+
+        const bar = win.querySelector('.pbn-dos__tabs');
+        bar.textContent = '';
+        for (const t of tabs) {
+          const orig = tabOrig.get(t), name = personOf(orig)?.name || orig;
+          const b = c.el('button', { type: 'button', className: 'pbn-dos__tab-btn', textContent: name, title: name === orig ? orig : name + ' — ' + orig });
+          b.setAttribute('role', 'tab');
+          b.setAttribute('aria-selected', String(t === activeTab));
+          b.addEventListener('click', () => {
+            if (Date.now() - dragAt < 300) return;
+            activeTab = t;
+            if (dos.folded) { dos.folded = false; saveDos(); applyLook(); }
+            renderDossier(true);
+          });
+          const x = c.el('button', { type: 'button', className: 'pbn-dos__tab-x', textContent: '×', title: 'Close this tab' });
+          x.setAttribute('aria-label', 'Close ' + name);
+          x.addEventListener('click', () => closeTab(t));
+          bar.append(c.el('div', { className: 'pbn-dos__tab' + (t === activeTab ? ' pbn-dos__tab--on' : '') }, b, x));
+        }
+        bar.querySelector('.pbn-dos__tab--on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+
+        const body = win.querySelector('.pbn-dos__body');
+        const orig = tabOrig.get(activeTab);
+        let P = win._parts;
+        const sameTab = !full && P && P.tab === activeTab;
+        if (!sameTab) {
+          body.textContent = '';
+          P = win._parts = { tab: activeTab, who: c.el('div'), notes: c.el('div', { className: 'pbn-dos__notes' }), look: c.el('div'), html: null };
+          body.append(P.who, P.notes, P.look);
+          body.scrollTop = 0;
+        }
+        // who
+        const person = personOf(orig);
+        const look = latestLook(orig);
+        const looks = person ? person.looks : [orig];
+        const edit = c.el('button', { type: 'button', className: 'pbn-dos__btn', textContent: person?.name ? 'Rename · link…' : 'Name · link…',
+          title: 'Your name for them, "Same person as…", their other appearances' });
+        edit.addEventListener('click', () => openEditor(edit, orig));
+        const aliases = person?.name ? looks : looks.filter(l => keyOf(l) !== keyOf(orig));
+        P.who.textContent = '';
+        P.who.append(...[
+          c.el('div', { className: 'pbn-dos__top' }, c.el('div', { className: 'pbn-dos__name', textContent: person?.name || orig }), edit),
+          aliases.length ? c.el('div', { className: 'pbn-dos__alias', textContent: (person?.name ? 'Seen as: ' : 'Also seen as: ') + aliases.join(' · ') }) : null,
+          look?.sub ? c.el('div', { className: 'pbn-dos__alias', textContent: look.sub }) : null,
+        ].filter(Boolean));
+        // notes (left alone while you're typing in them)
+        if (!sameTab || !P.notes.querySelector('textarea')) { P.notes.textContent = ''; notesSection(P.notes, orig); }
+        // appearance
+        const stamp = look ? look.at + '|' + look.as : 'none';
+        if (P.html !== stamp) {
+          P.html = stamp;
+          P.look.textContent = '';
+          P.look.append(c.el('div', { className: 'pbn-tk-menu__head pbn-dos__lookhead' }, 'Their look',
+            look ? c.el('span', { className: 'pbn-dos__when', textContent: 'seen ' + when(look.at) + (looks.length > 1 ? ' · as ' + look.as : '') }) : null));
+          if (!look) {
+            P.look.append(c.el('div', { className: 'pbn-dos__empty', textContent: 'No look saved yet. /look at them and it lands here, replacing the last one.' }));
+          } else {
+            const box = c.el('div', { className: 'pbn-dos__look' });
+            box.append(cleanHtml(look.html));
+            linkify(box);
+            P.look.append(box);
+          }
+        }
+      }
+
+      if (CARDS) c.addStyle(String.raw`
+        .chat-container [role="article"].pbn-dos-folded > :not(.pbn-dos-stub) { display: none !important; }
+        .pbn-dos-stub { margin: 0; }
+        .pbn-dos-stub__btn {
+          margin-left: 8px; padding: 1px 9px; cursor: pointer; vertical-align: baseline;
+          background: none; color: #c4b49a; border: 1px solid #5a1212; border-radius: 4px; font: inherit; font-size: .85em;
+        }
+        .pbn-dos-stub__btn:hover { color: #e8ddd0; background: #5a121233; }
+        #pbn-dossier {
+          position: fixed; z-index: 2500; display: flex; flex-direction: column; box-sizing: border-box;
+          min-width: 300px; min-height: 160px; max-width: 96vw; max-height: 94vh; overflow: hidden; resize: both;
+          background: #120a0a; color: #e8ddd0; border: 1px solid #5a1212; border-radius: 6px; box-shadow: 0 10px 36px #000c;
+          font-family: system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: var(--pbn-dos-size, 16px);
+        }
+        #pbn-dossier[hidden] { display: none; }
+        #pbn-dossier.pbn-dos--serif { font-family: Georgia, 'Palatino Linotype', 'Book Antiqua', serif; }
+        #pbn-dossier.pbn-dos--folded { resize: none; min-height: 0; height: auto; }
+        #pbn-dossier.pbn-dos--folded .pbn-dos__body { display: none; }
+        .pbn-dos__head {
+          display: flex; align-items: stretch; flex: 0 0 auto; cursor: move; user-select: none; touch-action: none;
+          background: #1a0d0d; border-bottom: 1px solid #5a1212;
+        }
+        .pbn-dos__tabs { display: flex; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
+        .pbn-dos__tab { display: flex; align-items: stretch; flex: 0 1 auto; min-width: 90px; max-width: 220px; border-right: 1px solid #5a121266; }
+        .pbn-dos__tab--on { flex-shrink: 0; max-width: 260px; }
+        .pbn-dos__tab--on { background: #120a0a; box-shadow: inset 0 -2px #9e2b2b; }
+        .pbn-dos__tab-btn {
+          flex: 1; min-width: 0; padding: 9px 4px 9px 12px; border: 0; background: none; cursor: pointer; text-align: left;
+          color: #9a8a7a; font: inherit; font-size: .9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .pbn-dos__tab--on .pbn-dos__tab-btn, .pbn-dos__tab-btn:hover { color: #f3e6cf; }
+        .pbn-dos__tab-x { flex: 0 0 auto; padding: 0 9px; border: 0; background: none; cursor: pointer; color: #9a8a7a; font: inherit; font-size: 1.05em; }
+        .pbn-dos__tab-x:hover { color: #e07062; }
+        .pbn-dos__tools { display: flex; align-items: center; flex: 0 0 auto; padding: 0 4px; gap: 1px; }
+        .pbn-dos__tool {
+          min-width: 32px; height: 32px; padding: 0 6px; border: 0; border-radius: 4px; background: none; cursor: pointer;
+          color: #c4b49a; font: 600 .9rem/1 system-ui, 'Segoe UI', sans-serif;
+        }
+        .pbn-dos__tool:hover { color: #f3e6cf; background: #5a121244; }
+        .pbn-dos__tool:focus-visible, .pbn-dos__tab-btn:focus-visible, .pbn-dos__tab-x:focus-visible { outline: 2px solid #e0b84a; outline-offset: -2px; }
+        .pbn-dos__body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 18px 18px; line-height: 1.6; }
+        .pbn-dos__top { display: flex; align-items: flex-start; gap: 10px; }
+        .pbn-dos__name { flex: 1; color: #f3e6cf; font-size: 1.35em; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+        .pbn-dos__btn {
+          flex: 0 0 auto; padding: 4px 11px; cursor: pointer; background: none; color: #c4b49a;
+          border: 1px solid #9e2b2b80; border-radius: 4px; font: inherit; font-size: .85em;
+        }
+        .pbn-dos__btn:hover { color: #e8ddd0; background: #5a121233; }
+        .pbn-dos__alias { margin-top: 3px; color: #9a8a7a; font-size: .9em; font-style: italic; overflow-wrap: anywhere; }
+        #pbn-dossier .pbn-tk-menu__head {
+          display: flex; justify-content: space-between; gap: 10px; margin: 18px 0 8px; padding: 0 0 4px;
+          border-bottom: 1px solid #5a121266; color: #9a8a7a; font-size: .75em; letter-spacing: .8px; text-transform: uppercase;
+        }
+        .pbn-dos__when { text-transform: none; letter-spacing: 0; font-size: 1.15em; font-style: italic; }
+        #pbn-dossier .pbn-tk-menu__item { padding: 6px 0; font-size: 1em; }
+        #pbn-dossier .pbn-nm-notes, #pbn-dossier .pbn-nm-notes-edit { margin: 0 0 6px; width: 100%; max-height: none; font-family: inherit; font-size: 1em; }
+        #pbn-dossier .pbn-nm-notes-bar { padding: 0 0 6px; }
+        .pbn-dos__look { overflow-wrap: anywhere; }
+        .pbn-dos__look p { margin: 0 0 .7em; }
+        .pbn-dos__look strong { font-weight: 600; }
+        .pbn-dos__look a { color: #e0b84a; }
+        .pbn-dos__look .look-equipment, .pbn-dos__look .look-political { margin-top: .6em; padding-top: .5em; border-top: 1px dotted #5a121299; }
+        .pbn-dos__look .look-label { color: #9a8a7a; }
+        .pbn-dos__empty { color: #9a8a7a; font-style: italic; }
+      `);
+
       namesApi = {
         openList,
         // Save Log: restores the game text in a copy of a message, or with
         // withNames writes your names into it.
         prepareLogCopy(root, withNames) {
+          root.querySelectorAll('.pbn-dos-stub').forEach(n => n.remove()); // folded-look line (DOM fallback only)
           root.querySelectorAll(`.${NM}[data-pbn-nm-orig]`).forEach(s => { s.textContent = s.dataset.pbnNmOrig; });
           if (!withNames) return;
           process(root);
@@ -2619,13 +3024,18 @@
         const run = () => {
           ensureButton();
           syncContainer();
-          if ((c.getCharName() || 'default') !== bookChar) { loadBook(); refreshAll(); }
+          if ((c.getCharName() || 'default') !== bookChar) { closeDossier(); loadBook(); looksCache = null; refreshAll(); }
         };
         run();
         tick = setInterval(run, 1000);
         document.addEventListener('click', onChatClick);
+        document.addEventListener('contextmenu', onChatContext);
         window.addEventListener('storage', onStorage);
+        window.addEventListener('resize', placeDossier);
       }, () => {
+        closeDossier();
+        document.removeEventListener('contextmenu', onChatContext);
+        window.removeEventListener('resize', placeDossier);
         clearInterval(tick);
         if (observer) observer.disconnect();
         if (typingObserver) typingObserver.disconnect();
