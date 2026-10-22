@@ -14,9 +14,6 @@
 (function () {
   'use strict';
 
-  // On MUSH Mapper the toolkit only leaves a marker saying a userscript
-  // manager is installed, so the mapper can offer its add-ons to script
-  // users (same as the standalone Compass Tools script does).
   if (location.hostname === 'map.stoia.red') {
     document.documentElement.dataset.pbnScripts = '1';
     return;
