@@ -196,7 +196,7 @@ Adds a **Save Log** button to the chat tab bar. Messages are captured to memory 
 - **RP tab only.** The log matches what the RP tab shows; anything the game routes to the Activity tab is left out.
 - **Recorded from the game's own message list, not the screen**, so it keeps going no matter how long the session runs or how busy the room gets. (Versions before 1.1.0 read the chat on screen and could silently stop partway through a session.)
 - **Server timestamps** where the game provides them; otherwise the time the message arrived.
-- **Readable lines** — names, "says,"/"exclaims,", emotes and room tags are properly spaced (`[The Assembly Hall] Seamus says, "…"`).
+- **Readable lines** — names, "says,"/"exclaims,", emotes and room tags are properly spaced (`[The Assembly Hall] Jane Doe says, "…"`).
 - **No duplicates after reconnecting** — the game's "recent activity" replay is skipped for lines already logged, but anything you missed while disconnected is kept.
 
 Nothing is written to browser storage — the log lives in memory only and is gone when the tab closes. Messages already in the chat when the script loads are included too.
@@ -207,7 +207,7 @@ A **Search** button sits next to **Save Log**. Type to search the chat: the newe
 
 - **Enter** — next older match · **Shift+Enter** — next newer match (or use ▲ / ▼). The counter reads e.g. `2 / 7`, counted from the newest.
 - **Esc** (or ✕) closes the search and clears the highlights.
-- Case and spacing don't matter, so `vergil says` finds lines where the game runs the name and "says," together.
+- Case and spacing don't matter, so `jane says` finds lines where the game runs the name and "says," together.
 
 Search covers the messages currently in the chat. The game only keeps the last 500 on the page; anything older is still in your **Save Log** file. Messages you've hidden (below) are skipped.
 
@@ -343,7 +343,7 @@ The list is stored per browser/device. This script has no configurable options.
 
 ## Personal Names, Notes & Dossiers (toolkit only)
 
-Give people your own names. Someone you only know as *"A short beefcake of a man"* introduces himself as Arsenije: click his short desc in the chat, type the name, and from then on he shows up as **Arsenije** wherever the game names him. If he re-introduces himself as Count Fabulous next week, click again and rename him.
+Give people your own names. Someone you only know as *"a man in a grey coat"* introduces himself as John: click his short desc in the chat, type the name, and from then on he shows up as **John** wherever the game names him. If he re-introduces himself as "the Count" next week, click again and rename him.
 
 - **Where it applies** — only where the game puts a name, never in what people say:
   - the speaker of says and emotes
@@ -354,7 +354,7 @@ Give people your own names. Someone you only know as *"A short beefcake of a man
   - `[SYSTEM]` lines that start with someone (arrivals, departures, "X looks at Y.")
   - the "X is typing" indicator
 
-  Coloured short descs work too (`A <tired man> wearing a <black suit>`); switching back to the game's text restores the colours.
+  Coloured short descs work too (`a <tall figure> in a <long coat>`); switching back to the game's text restores the colours.
 - **Exact matches.** A name is tied to the exact name or short desc the game shows (capitals don't matter). If someone turns up with a new short desc, or the game starts showing their real name, attach that to them with **Same person as…** (below).
 - **Per character.** Each of your characters has their own names, so your Camarilla character doesn't recognise the people your Sabbat character met.
 - **You can tell it's yours.** Your names have a dotted gold underline and a small ✦. Hover one to see what the game actually shows. People you've only taken notes on (no name) get a grey dotted underline.
@@ -368,11 +368,11 @@ Give people your own names. Someone you only know as *"A short beefcake of a man
 - your notes on them, editable right there,
 - **their look**: the last `/look` you did on them, with the time you saw it. Links in it (people often put image links in their descs) are clickable and open in a new tab.
 
-When you `/look` at someone, the look is saved (replacing the previous one for that person) and their dossier opens. In the chat the whole description folds into one line, **You look at Raven · Dossier · Show here**, so it doesn't bury the scene; **Show here** unfolds that one. NPCs get dossiers too.
+When you `/look` at someone, the look is saved (replacing the previous one for that person) and their dossier opens. In the chat the whole description folds into one line, **You look at Jane Doe · Dossier · Show here**, so it doesn't bury the scene; **Show here** unfolds that one. NPCs get dossiers too.
 
 The window can be dragged by its **Dossiers** title bar, resized from the bottom-right corner, collapsed (▾, or double-click the header) and closed (✕). **A− / A+** change the text size and **Aa** switches between a plain sans-serif and a serif font. Position, size, font and text size are remembered. Each of your characters keeps their own saved looks (the last 200 people).
 
-**Introduced people link themselves.** Once you know someone's name, the game shows their look as *You look at Maeve LeFay (A tall barefoot woman…)*. If that short desc is someone you've already looked at, named or noted, the two are joined without asking (and the same the other way round). The dossier then heads them with their name and shows the short desc once underneath.
+**Introduced people link themselves.** Once you know someone's name, the game shows their look as *You look at Jane Doe (a woman in a long red coat…)*. If that short desc is someone you've already looked at, named or noted, the two are joined without asking (and the same the other way round). The dossier then heads them with their name and shows the short desc once underneath.
 
 **"Same person?"** When a look comes in, it's compared with the looks you've saved of everyone else. If at least 2 of its lines are word-for-word identical to someone else's, making up 30% or more of the shorter look, the dossier asks *Same person as …?* That covers someone who changed their short desc or outfit, or whom the game now shows by their real name. **Same person** links the two (keeping your name and notes); **Not them** stops asking about that pair. Lines are line breaks and sentences of 30+ characters; the game's own lines (court standing, gear, the italic state lines like "Color sits warm in their skin…") and any line found in three or more people's looks don't count, so two strangers with the same merits don't get matched.
 
@@ -384,7 +384,7 @@ All three behaviours can be switched off in the toolkit panel: dossiers on click
 
 - **Name this person / You call them** — type the name and press Enter. Clearing the field and saving removes the name (notes stay).
 - **Notes** — your own notes on this person, with Markdown: `# heading`, `**bold**`, `*italic*`, `- lists`, `> quotes`, `[links](https://…)`. Click **Write notes…** (or click existing notes) to edit. Notes are saved as you type, so closing the menu or pressing Esc never loses anything; **Done** (or Ctrl+Enter) shows them formatted again.
-- **Same person as…** — for when someone you know turns up under a new desc or name (they "introduce themselves as Count Fab"): click the new one, pick who it is from your searchable list, and it joins them. From then on both show your name for them and share the notes. If the new one already had its own name or notes, they're merged in: notes are appended below a divider, the other name goes into **↺ Back to**.
+- **Same person as…** — for when someone you know turns up under a new desc or name (they "introduce themselves as the Count"): click the new one, pick who it is from your searchable list, and it joins them. From then on both show your name for them and share the notes. If the new one already had its own name or notes, they're merged in: notes are appended below a divider, the other name goes into **↺ Back to**.
 - **Also seen as** — the person's other appearances. **✕** splits one off again (or **Not them** for the one you clicked), e.g. when two people turn out to share a generic short desc. Splitting doesn't undo a merge's notes; those stay with the person.
 - **↺ Back to "…"** — the last few names you gave this person, one click to switch back.
 - **Show the game's text for them** — turns your name off for just this person without forgetting it.

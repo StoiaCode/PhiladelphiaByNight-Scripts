@@ -203,7 +203,7 @@
   }
 
   // Active character: the play page's own state first, then the journal
-  // sidebar title ("Vergil's Journal"). null when neither is available.
+  // sidebar title ("Jane Doe's Journal"). null when neither is available.
   function getCharName() {
     try {
       const name = findPlayInstance()?.proxy?.character?.name;
@@ -2215,8 +2215,8 @@
       // ---- Finding names. Only places the game puts a name are touched, never
       // what people say. Each one is wrapped in <span class="pbn-nm"
       // data-pbn-nm-orig="game text">, which is then shown as the game text or
-      // your name. Short descs can carry colour spans (A <span>tired man</span>
-      // wearing…), so a name is a run of nodes, read as one whitespace-collapsed
+      // your name. Short descs can carry colour spans (a <span>tall figure</span>
+      // in a long coat…), so a name is a run of nodes, read as one whitespace-collapsed
       // string with a position map back into the DOM.
       const OBJ = '￼'; // stands in for an already-wrapped name
       function mapText(nodes) {
@@ -2761,7 +2761,7 @@
         }
         return best;
       }
-      // "You look at Maeve LeFay (A tall barefoot woman…)": the game itself says
+      // "You look at Jane Doe (a woman in a long red coat…)": the game itself says
       // that name and that short desc are one person, so they're linked without
       // asking, if the desc is already known (looked at, named or noted). Also
       // the other way round: a look at the bare desc after the named one.

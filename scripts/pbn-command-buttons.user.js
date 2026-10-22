@@ -153,7 +153,7 @@
   // The list a character actually uses.
   function commandsFor(name) { return ownList(name) || loadShared(); }
 
-  // Active character, from the journal sidebar title ("Vergil's Journal").
+  // Active character, from the journal sidebar title ("Jane Doe's Journal").
   // Plain DOM text, so it works whether or not the userscript manager runs
   // this script in a sandbox. null when not known (yet).
   function getCharName() {

@@ -67,7 +67,7 @@
   // --------------------------------------------------------------------------
   // Active character name. Preferred source is the play page's own Vue state
   // (the same component the Chat Log script reads); the journal sidebar title
-  // ("Vergil's Journal") is the fallback.
+  // ("Jane Doe's Journal") is the fallback.
   // --------------------------------------------------------------------------
 
   function findPlayInstance() {
