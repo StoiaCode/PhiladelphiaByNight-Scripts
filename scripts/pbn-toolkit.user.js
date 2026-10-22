@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.6.0
+// @version      1.6.1
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -22,7 +22,7 @@
     return;
   }
 
-  const TK_VERSION = '1.6.0';
+  const TK_VERSION = '1.6.1';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -1203,7 +1203,7 @@
         .pbn-compass-vertical .pbn-vx--locked { color: #d4a34b; }
         .pbn-compass-vertical .pbn-vx--broken { color: #e07062; }
         .pbn-compass-vertical .pbn-vx--aerial-open { color: #aaaa5a; }
-        .pbn-compass-vertical .pbn-vx--aerial-locked { color: #4a4a2a; cursor: not-allowed; }
+        /* A flight exit you can't use looks like no exit: same thing to you. */
       `);
 
       function applyTooltips(compass) {

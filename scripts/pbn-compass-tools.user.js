@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Compass Tools
 // @namespace    stoia.red
-// @version      1.3.2
+// @version      1.3.3
 // @description  Shows destination room names on compass hover, adds a Walk/Look/Search mode toggle, and an always-visible Up/Down bar under the compass.
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -140,7 +140,7 @@
     .pbn-compass-vertical .pbn-vx--locked { color: #d4a34b; }
     .pbn-compass-vertical .pbn-vx--broken { color: #e07062; }
     .pbn-compass-vertical .pbn-vx--aerial-open { color: #aaaa5a; }
-    .pbn-compass-vertical .pbn-vx--aerial-locked { color: #4a4a2a; cursor: not-allowed; }
+    /* A flight exit you can't use looks like no exit: same thing to you. */
   `;
   document.head.appendChild(style);
 
