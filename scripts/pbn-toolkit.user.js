@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.6.1
+// @version      1.7.0
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -22,7 +22,7 @@
     return;
   }
 
-  const TK_VERSION = '1.6.1';
+  const TK_VERSION = '1.7.0';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -2820,6 +2820,7 @@
         for (const row of rows) {
           if (row.dataset.pbnDos) continue;
           row.dataset.pbnDos = '1';
+          row.querySelectorAll('.' + NM).forEach(sp => seenAt.set(keyOf(sp.dataset.pbnNmOrig), ++seenTick));
           const l = lookOf(row);
           if (!l) continue;
           const saved = saveLook(l.key, { ...extractLook(row), orig: l.orig, at: Date.now() }, !live);
@@ -2827,6 +2828,27 @@
           if (live && AUTO_OPEN) openDossier(l.orig, { quiet: true });
           else if (saved) renderDossier(false);
         }
+      }
+
+      // Look / Whisper buttons. The game takes anyone in the room by partial
+      // name or description, so the target is the game text they were last
+      // seen under in the chat (a person can have several appearances).
+      const seenAt = new Map(); // look key -> order it was last seen in the chat
+      let seenTick = 0;
+      function targetFor(orig) {
+        let best = orig;
+        for (const l of personOf(orig)?.looks || []) if ((seenAt.get(keyOf(l)) || 0) > (seenAt.get(keyOf(best)) || 0)) best = l;
+        return best;
+      }
+      // Turns a half-typed line into the whisper, or replaces a half-typed command.
+      function startWhisper(target) {
+        const input = c.findCommandInput();
+        if (!input) return;
+        const draft = input.value.trim();
+        const v = '/whisper ' + target + ' ' + (draft && !draft.startsWith('/') ? draft : '');
+        c.setNativeValue(input, v);
+        input.focus();
+        input.setSelectionRange(v.length, v.length);
       }
 
       // Look text is the game's own (already sanitised) HTML; this is a second
@@ -3026,10 +3048,16 @@
         const edit = c.el('button', { type: 'button', className: 'pbn-dos__btn', textContent: person?.name ? 'Rename · link…' : 'Name · link…',
           title: 'Your name for them, "Same person as…", their other appearances' });
         edit.addEventListener('click', () => openEditor(edit, orig));
+        const target = targetFor(orig);
+        const lookBtn = c.el('button', { type: 'button', className: 'pbn-dos__btn', textContent: 'Look', title: 'Send /look ' + target + ' now' });
+        lookBtn.addEventListener('click', () => c.sendCommand('/look ' + target));
+        const whisperBtn = c.el('button', { type: 'button', className: 'pbn-dos__btn', textContent: 'Whisper', title: 'Start /whisper ' + target + ' … in the command box' });
+        whisperBtn.addEventListener('click', () => startWhisper(target));
         const aliases = person?.name ? looks : looks.filter(l => keyOf(l) !== keyOf(orig));
         P.who.textContent = '';
         P.who.append(...[
-          c.el('div', { className: 'pbn-dos__top' }, c.el('div', { className: 'pbn-dos__name', textContent: person?.name || orig }), edit),
+          c.el('div', { className: 'pbn-dos__top' }, c.el('div', { className: 'pbn-dos__name', textContent: person?.name || orig }),
+            c.el('div', { className: 'pbn-dos__actions' }, lookBtn, whisperBtn, edit)),
           aliases.length ? c.el('div', { className: 'pbn-dos__alias', textContent: (person?.name ? 'Seen as: ' : 'Also seen as: ') + aliases.join(' · ') }) : null,
           look?.sub ? c.el('div', { className: 'pbn-dos__alias', textContent: look.sub }) : null,
         ].filter(Boolean));
@@ -3118,6 +3146,7 @@
         .pbn-dos__tool:focus-visible, .pbn-dos__tab-btn:focus-visible, .pbn-dos__tab-x:focus-visible { outline: 2px solid #e0b84a; outline-offset: -2px; }
         .pbn-dos__body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 18px 18px; line-height: 1.6; }
         .pbn-dos__top { display: flex; align-items: flex-start; gap: 10px; }
+        .pbn-dos__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; flex: 0 1 auto; }
         .pbn-dos__name { flex: 1; color: #f3e6cf; font-size: 1.35em; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
         .pbn-dos__btn {
           flex: 0 0 auto; padding: 4px 11px; cursor: pointer; background: none; color: #c4b49a;

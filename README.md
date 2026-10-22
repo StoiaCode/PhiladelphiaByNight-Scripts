@@ -364,6 +364,7 @@ Give people your own names. Someone you only know as *"A short beefcake of a man
 **Clicking a name** in the chat opens that person's **dossier**: a window that floats over the page with one tab per person you've opened. A tab shows:
 
 - your name for them and their other appearances (with a **Name · link…** button for renaming and "Same person as…"),
+- **Look** sends `/look` at them right away (the new look replaces the saved one), and **Whisper** starts `/whisper <them> ` in the command box for you to finish. A line you had already typed (not a command) becomes the whisper's message. Both use whatever the game showed them as most recently, since anyone in the room can be named by their description,
 - your notes on them, editable right there,
 - **their look**: the last `/look` you did on them, with the time you saw it. Links in it (people often put image links in their descs) are clickable and open in a new tab.
 
