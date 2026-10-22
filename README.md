@@ -372,6 +372,8 @@ When you `/look` at someone, the look is saved (replacing the previous one for t
 
 The window can be dragged by its **Dossiers** title bar, resized from the bottom-right corner, collapsed (▾, or double-click the header) and closed (✕). **A− / A+** change the text size and **Aa** switches between a plain sans-serif and a serif font. Position, size, font and text size are remembered. Each of your characters keeps their own saved looks (the last 200 people).
 
+**Introduced people link themselves.** Once you know someone's name, the game shows their look as *You look at Maeve LeFay (A tall barefoot woman…)*. If that short desc is someone you've already looked at, named or noted, the two are joined without asking (and the same the other way round). The dossier then heads them with their name and shows the short desc once underneath.
+
 **"Same person?"** When a look comes in, it's compared with the looks you've saved of everyone else. If at least 2 of its lines are word-for-word identical to someone else's, making up 30% or more of the shorter look, the dossier asks *Same person as …?* That covers someone who changed their short desc or outfit, or whom the game now shows by their real name. **Same person** links the two (keeping your name and notes); **Not them** stops asking about that pair. Lines are line breaks and sentences of 30+ characters; the game's own lines (court standing, gear, the italic state lines like "Color sits warm in their skin…") and any line found in three or more people's looks don't count, so two strangers with the same merits don't get matched.
 
 All three behaviours can be switched off in the toolkit panel: dossiers on click, opening on `/look`, and folding looks in the chat.

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.7.0
+// @version      1.7.1
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -22,7 +22,7 @@
     return;
   }
 
-  const TK_VERSION = '1.7.0';
+  const TK_VERSION = '1.7.1';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -2761,6 +2761,35 @@
         }
         return best;
       }
+      // "You look at Maeve LeFay (A tall barefoot woman…)": the game itself says
+      // that name and that short desc are one person, so they're linked without
+      // asking, if the desc is already known (looked at, named or noted). Also
+      // the other way round: a look at the bare desc after the named one.
+      function autoLink(orig, sub) {
+        const store = looksFor();
+        let pair = null;
+        if (sub && keyOf(sub) !== keyOf(orig) && (index.has(keyOf(sub)) || store[keyOf(sub)])) pair = [orig, sub];
+        if (!sub) {
+          const named = Object.values(store).find(v => v.sub && v.orig && keyOf(v.sub) === keyOf(orig) && keyOf(v.orig) !== keyOf(orig));
+          if (named) pair = [named.orig, orig];
+        }
+        if (!pair) return;
+        const a = index.get(keyOf(pair[0])), b = index.get(keyOf(pair[1]));
+        if (a && a === b) return;
+        linkPair(pair[0], pair[1]);
+      }
+      // The newest of a person's looks that came with a short desc in
+      // brackets: its game text is their real name, the bracket their desc.
+      function namedLook(orig) {
+        const store = looksFor();
+        return (personOf(orig)?.looks || [orig]).map(l => store[keyOf(l)] && { ...store[keyOf(l)], as: l })
+          .filter(v => v?.sub).sort((a, b) => b.at - a.at)[0] || null;
+      }
+      // How a person is headed: your name for them, else the game's name, else the text.
+      function displayOf(orig) {
+        return personOf(orig)?.name || namedLook(orig)?.as || orig;
+      }
+
       function notThem(a, b) {
         const all = looksAll();
         const store = all[bookChar] || {};
@@ -2823,7 +2852,9 @@
           row.querySelectorAll('.' + NM).forEach(sp => seenAt.set(keyOf(sp.dataset.pbnNmOrig), ++seenTick));
           const l = lookOf(row);
           if (!l) continue;
-          const saved = saveLook(l.key, { ...extractLook(row), orig: l.orig, at: Date.now() }, !live);
+          const data = extractLook(row);
+          const saved = saveLook(l.key, { ...data, orig: l.orig, at: Date.now() }, !live);
+          autoLink(l.orig, data.sub);
           if (FOLD) fold(row, l);
           if (live && AUTO_OPEN) openDossier(l.orig, { quiet: true });
           else if (saved) renderDossier(false);
@@ -3014,7 +3045,7 @@
         const bar = win.querySelector('.pbn-dos__tabs');
         bar.textContent = '';
         for (const t of tabs) {
-          const orig = tabOrig.get(t), name = personOf(orig)?.name || orig;
+          const orig = tabOrig.get(t), name = displayOf(orig);
           const b = c.el('button', { type: 'button', className: 'pbn-dos__tab-btn', textContent: name, title: name === orig ? orig : name + ' — ' + orig });
           b.setAttribute('role', 'tab');
           b.setAttribute('aria-selected', String(t === activeTab));
@@ -3053,13 +3084,16 @@
         lookBtn.addEventListener('click', () => c.sendCommand('/look ' + target));
         const whisperBtn = c.el('button', { type: 'button', className: 'pbn-dos__btn', textContent: 'Whisper', title: 'Start /whisper ' + target + ' … in the command box' });
         whisperBtn.addEventListener('click', () => startWhisper(target));
-        const aliases = person?.name ? looks : looks.filter(l => keyOf(l) !== keyOf(orig));
+        // The short desc is shown on its own line, so it isn't listed again.
+        const display = displayOf(orig);
+        const shortDesc = namedLook(orig)?.sub || '';
+        const aliases = looks.filter(l => keyOf(l) !== keyOf(display) && keyOf(l) !== keyOf(shortDesc));
         P.who.textContent = '';
         P.who.append(...[
-          c.el('div', { className: 'pbn-dos__top' }, c.el('div', { className: 'pbn-dos__name', textContent: person?.name || orig }),
+          c.el('div', { className: 'pbn-dos__top' }, c.el('div', { className: 'pbn-dos__name', textContent: display }),
             c.el('div', { className: 'pbn-dos__actions' }, lookBtn, whisperBtn, edit)),
           aliases.length ? c.el('div', { className: 'pbn-dos__alias', textContent: (person?.name ? 'Seen as: ' : 'Also seen as: ') + aliases.join(' · ') }) : null,
-          look?.sub ? c.el('div', { className: 'pbn-dos__alias', textContent: look.sub }) : null,
+          shortDesc ? c.el('div', { className: 'pbn-dos__alias', textContent: shortDesc }) : null,
         ].filter(Boolean));
         const sug = look && suggestFor(keyOf(look.as));
         if (sug) {
