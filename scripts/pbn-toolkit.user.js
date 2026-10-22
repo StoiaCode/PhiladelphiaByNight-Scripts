@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.4.1
+// @version      1.5.0
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -22,7 +22,7 @@
     return;
   }
 
-  const TK_VERSION = '1.4.1';
+  const TK_VERSION = '1.5.0';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -2047,11 +2047,13 @@
       const personOf = orig => book[index.get(keyOf(orig))] || null;
       function loadBook() { bookChar = c.getCharName() || 'default'; book = migrate(loadAll()[bookChar] || {}); reindex(); }
       function write(all, b) {
-        for (const [id, person] of Object.entries(b)) if (!person.looks.length || (!person.name && !person.notes)) delete b[id];
+        // A person is kept if they have a name, notes, or more than one look.
+        for (const [id, person] of Object.entries(b)) if (!person.looks.length || (!person.name && !person.notes && person.looks.length < 2)) delete b[id];
         if (Object.keys(b).length) all[bookChar] = b; else delete all[bookChar];
         localStorage.setItem(KEY, JSON.stringify(all));
         book = b;
         reindex();
+        linesCache = null;
       }
       function update(fn) {
         const all = loadAll();
@@ -2089,18 +2091,25 @@
       }
       // "Same person as…": this look joins the target. If it already belonged
       // to someone, the two are merged: notes appended, names kept in "was".
-      function linkTo(orig, targetId) {
+      function mergeInto(b, orig, targetId) {
+        const target = b[targetId];
+        const srcId = findId(b, orig);
+        if (!target || srcId === targetId) return;
+        if (!srcId) { target.looks.push(norm(orig)); return; }
+        const src = b[srcId];
+        target.looks = uniqLooks([...target.looks, ...src.looks]);
+        if (src.notes) target.notes = target.notes ? target.notes + '\n\n---\n\n' + src.notes : src.notes;
+        if (!target.name && src.name) target.name = src.name;
+        target.was = pastNames([...(target.was || []), src.name, ...(src.was || [])], target.name);
+        delete b[srcId];
+      }
+      function linkTo(orig, targetId) { update(b => mergeInto(b, orig, targetId)); }
+      // Same, when the other look may not belong to anyone yet.
+      function linkPair(orig, other) {
         update(b => {
-          const target = b[targetId];
-          const srcId = findId(b, orig);
-          if (!target || srcId === targetId) return;
-          if (!srcId) { target.looks.push(norm(orig)); return; }
-          const src = b[srcId];
-          target.looks = uniqLooks([...target.looks, ...src.looks]);
-          if (src.notes) target.notes = target.notes ? target.notes + '\n\n---\n\n' + src.notes : src.notes;
-          if (!target.name && src.name) target.name = src.name;
-          target.was = pastNames([...(target.was || []), src.name, ...(src.was || [])], target.name);
-          delete b[srcId];
+          let id = findId(b, other);
+          if (!id) b[id = newId()] = { looks: [norm(other)], name: '', was: [], off: false };
+          mergeInto(b, orig, id);
         });
       }
       // "Not them": this look leaves its person and is a stranger again.
@@ -2627,11 +2636,12 @@
       const LOOKS_KEY = 'pbn-dossier-looks'; // { [character]: { [lowercased game text]: { html, sub, at } } }
       const MAX_LOOKS = 200;                 // per character, oldest dropped first
       const loadJSON = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || 'null') || d; } catch (e) { return d; } };
-      const dos = Object.assign({ x: null, y: 80, w: 460, h: 560, font: 'sans', size: 16, folded: false }, loadJSON(DOS_KEY, {}));
+      const dos = Object.assign({ x: null, y: 70, w: 560, h: null, font: 'sans', size: 16, folded: false }, loadJSON(DOS_KEY, {}));
+      if (dos.w === 460 && dos.h === 560) { dos.w = 560; dos.h = null; } // 1.4.0's too-small default, never resized
       const saveDos = () => localStorage.setItem(DOS_KEY, JSON.stringify(dos));
       const tabs = [];                 // look keys, in tab order
       const tabOrig = new Map();       // look key -> game text as shown
-      let activeTab = null, win = null, dragAt = 0, looksCache = null;
+      let activeTab = null, win = null, dragAt = 0, looksCache = null, linesCache = null;
 
       const looksAll = () => looksCache || (looksCache = loadJSON(LOOKS_KEY, {}));
       const looksFor = () => looksAll()[bookChar] || {};
@@ -2639,7 +2649,8 @@
         const all = looksAll();
         const store = all[bookChar] || (all[bookChar] = {});
         if (onlyIfMissing && store[key]) return false;
-        store[key] = data;
+        store[key] = { ...data, ...(store[key]?.nope ? { nope: store[key].nope } : {}) };
+        linesCache = null;
         const keys = Object.keys(store);
         if (keys.length > MAX_LOOKS) keys.sort((a, b) => store[a].at - store[b].at).slice(0, keys.length - MAX_LOOKS).forEach(k => delete store[k]);
         try { localStorage.setItem(LOOKS_KEY, JSON.stringify(all)); } catch (e) { LOG('names: could not save a look', e); }
@@ -2650,6 +2661,62 @@
         const store = looksFor();
         return (personOf(orig)?.looks || [orig]).map(l => store[keyOf(l)] && { ...store[keyOf(l)], as: l })
           .filter(Boolean).sort((a, b) => b.at - a.at)[0] || null;
+      }
+
+      // ---- "Same person?" from saved looks. A look is split into lines (line
+      // breaks and sentences, 30+ characters) that are compared exactly. The
+      // game's own lines (court standing, gear, the italic state lines like
+      // "Color sits warm…") and any line found in 3+ people's looks don't
+      // count. 2+ identical lines that make up 30%+ of the shorter look →
+      // suggest. Changing outfit keeps the face and body lines.
+      const MIN_LINE = 30, MIN_SHARED = 2, MIN_SHARE = 0.3;
+      function linesOf(html) {
+        const tpl = document.createElement('template');
+        tpl.innerHTML = html;
+        const root = tpl.content;
+        root.querySelectorAll('.look-political, .look-equipment, p > em').forEach(n => n.remove());
+        root.querySelectorAll('br').forEach(br => br.replaceWith('\n'));
+        root.querySelectorAll('p, div').forEach(n => n.append('\n'));
+        return new Set(root.textContent.split(/\n+|(?<=[.!?])\s+/)
+          .map(l => l.replace(/\s+/g, ' ').trim().toLowerCase()).filter(l => l.length >= MIN_LINE));
+      }
+      function allLines() {
+        if (linesCache) return linesCache;
+        const lines = new Map(), owners = new Map();
+        for (const [k, v] of Object.entries(looksFor())) lines.set(k, linesOf(v.html));
+        for (const [k, set] of lines) {
+          const who = index.get(k) || k;
+          for (const l of set) (owners.get(l) || owners.set(l, new Set()).get(l)).add(who);
+        }
+        const common = new Set([...owners].filter(([, who]) => who.size >= 3).map(([l]) => l));
+        return (linesCache = { lines, common });
+      }
+      function suggestFor(lookKey) {
+        const { lines, common } = allLines();
+        const store = looksFor();
+        const mine = [...(lines.get(lookKey) || [])].filter(l => !common.has(l));
+        if (mine.length < MIN_SHARED) return null;
+        const self = index.get(lookKey);
+        const nope = new Set(store[lookKey]?.nope || []);
+        let best = null;
+        for (const [k, set] of lines) {
+          if (k === lookKey || nope.has(k) || (store[k]?.nope || []).includes(lookKey)) continue;
+          if (self && index.get(k) === self) continue;
+          const theirs = [...set].filter(l => !common.has(l)).length;
+          if (theirs < MIN_SHARED) continue;
+          const shared = mine.filter(l => set.has(l)).length;
+          const total = Math.min(mine.length, theirs);
+          if (shared >= MIN_SHARED && shared / total >= MIN_SHARE && (!best || shared / total > best.shared / best.total)) {
+            best = { key: k, orig: store[k].orig || k, shared, total };
+          }
+        }
+        return best;
+      }
+      function notThem(a, b) {
+        const all = looksAll();
+        const store = all[bookChar] || {};
+        for (const [x, y] of [[a, b], [b, a]]) if (store[x]) store[x].nope = [...new Set([...(store[x].nope || []), y])];
+        try { localStorage.setItem(LOOKS_KEY, JSON.stringify(all)); } catch (e) { LOG('names: could not save', e); }
       }
 
       // "You look at <name>" rows. /look only ever targets characters (PCs or
@@ -2706,7 +2773,7 @@
           row.dataset.pbnDos = '1';
           const l = lookOf(row);
           if (!l) continue;
-          const saved = saveLook(l.key, { ...extractLook(row), at: Date.now() }, !live);
+          const saved = saveLook(l.key, { ...extractLook(row), orig: l.orig, at: Date.now() }, !live);
           if (FOLD) fold(row, l);
           if (live && AUTO_OPEN) openDossier(l.orig, { quiet: true });
           else if (saved) renderDossier(false);
@@ -2760,8 +2827,8 @@
         win.classList.toggle('pbn-dos--serif', dos.font === 'serif');
         win.classList.toggle('pbn-dos--folded', !!dos.folded);
         win.style.setProperty('--pbn-dos-size', dos.size + 'px');
-        win.style.width = dos.w + 'px';
-        win.style.height = dos.folded ? '' : dos.h + 'px';
+        win.style.width = Math.min(dos.w, window.innerWidth - 16) + 'px';
+        win.style.height = dos.folded ? '' : (dos.h || Math.round(Math.min(760, window.innerHeight * 0.8))) + 'px';
         const f = win.querySelector('.pbn-dos__fold');
         f.textContent = dos.folded ? '▸' : '▾';
         f.title = dos.folded ? 'Expand' : 'Collapse';
@@ -2778,18 +2845,20 @@
         const size = d => () => { dos.size = Math.min(26, Math.max(12, dos.size + d)); saveDos(); applyLook(); };
         const tabsBar = c.el('div', { className: 'pbn-dos__tabs' });
         tabsBar.setAttribute('role', 'tablist');
-        const head = c.el('div', { className: 'pbn-dos__head', title: 'Drag to move · double-click to collapse' }, tabsBar,
+        const head = c.el('div', { className: 'pbn-dos__head', title: 'Drag to move · double-click to collapse' },
+          c.el('span', { className: 'pbn-dos__grip', textContent: '⠿' }),
+          c.el('span', { className: 'pbn-dos__title', textContent: 'Dossiers' }),
           c.el('div', { className: 'pbn-dos__tools' },
             tool('A−', 'Smaller text', size(-1)),
             tool('A+', 'Larger text', size(1)),
             tool('Aa', 'Switch between sans-serif and serif', () => { dos.font = dos.font === 'serif' ? 'sans' : 'serif'; saveDos(); applyLook(); }),
             tool('▾', 'Collapse', () => { dos.folded = !dos.folded; saveDos(); applyLook(); }, 'pbn-dos__fold'),
             tool('✕', 'Close the dossier window', closeDossier)));
-        win = c.el('div', { id: 'pbn-dossier' }, head, c.el('div', { className: 'pbn-dos__body' }));
+        win = c.el('div', { id: 'pbn-dossier' }, head, tabsBar, c.el('div', { className: 'pbn-dos__body' }));
         win.setAttribute('role', 'dialog');
         win.setAttribute('aria-label', 'Dossiers');
         head.addEventListener('dblclick', e => { if (e.target.closest('button')) return; dos.folded = !dos.folded; saveDos(); applyLook(); });
-        // Drag by the header (tabs included, once the pointer has moved a bit).
+        // Drag by the title bar (once the pointer has moved a bit).
         head.addEventListener('pointerdown', ev => {
           if (ev.button !== 0 || ev.target.closest('.pbn-dos__tool, .pbn-dos__tab-x')) return;
           const sx = ev.clientX, sy = ev.clientY, r = win.getBoundingClientRect();
@@ -2814,11 +2883,16 @@
         });
         // Resizing (bottom-right corner) is remembered.
         let resizeT = null;
+        let lastSize = null;
         new ResizeObserver(() => {
           if (dos.folded || win.hidden) return;
           clearTimeout(resizeT);
           resizeT = setTimeout(() => {
             if (dos.folded || win.hidden) return;
+            const size = win.offsetWidth + 'x' + win.offsetHeight;
+            if (lastSize === null) { lastSize = size; return; } // the first report is our own layout, not a resize
+            if (size === lastSize) return;
+            lastSize = size;
             dos.w = win.offsetWidth;
             dos.h = win.offsetHeight;
             saveDos();
@@ -2910,6 +2984,20 @@
           aliases.length ? c.el('div', { className: 'pbn-dos__alias', textContent: (person?.name ? 'Seen as: ' : 'Also seen as: ') + aliases.join(' · ') }) : null,
           look?.sub ? c.el('div', { className: 'pbn-dos__alias', textContent: look.sub }) : null,
         ].filter(Boolean));
+        const sug = look && suggestFor(keyOf(look.as));
+        if (sug) {
+          const other = personOf(sug.orig);
+          const who = other?.name || sug.orig;
+          const yes = c.el('button', { type: 'button', className: 'pbn-dos__btn pbn-dos__btn--primary', textContent: 'Same person' });
+          yes.addEventListener('click', () => linkPair(look.as, sug.orig));
+          const no = c.el('button', { type: 'button', className: 'pbn-dos__btn', textContent: 'Not them' });
+          no.addEventListener('click', () => { notThem(keyOf(look.as), sug.key); renderDossier(false); });
+          P.who.append(c.el('div', { className: 'pbn-dos__suggest' },
+            c.el('div', {}, 'Same person as ', c.el('b', { textContent: who }), '?'),
+            c.el('div', { className: 'pbn-dos__suggest-why', textContent: sug.shared + ' of ' + sug.total + ' lines of their looks are identical'
+              + (who !== sug.orig ? ' (last seen as ' + sug.orig + ')' : '') + '.' }),
+            c.el('div', { className: 'pbn-dos__suggest-row' }, yes, no)));
+        }
         // notes (left alone while you're typing in them)
         if (!sameTab || !P.notes.querySelector('textarea')) { P.notes.textContent = ''; notesSection(P.notes, orig); }
         // appearance
@@ -2932,6 +3020,7 @@
 
       if (CARDS) c.addStyle(String.raw`
         .chat-container [role="article"].pbn-dos-folded > :not(.pbn-dos-stub) { display: none !important; }
+        .chat-container [role="article"].pbn-dos-folded { white-space: normal !important; }
         .pbn-dos-stub { margin: 0; }
         .pbn-dos-stub__btn {
           margin-left: 8px; padding: 1px 9px; cursor: pointer; vertical-align: baseline;
@@ -2949,10 +3038,18 @@
         #pbn-dossier.pbn-dos--folded { resize: none; min-height: 0; height: auto; }
         #pbn-dossier.pbn-dos--folded .pbn-dos__body { display: none; }
         .pbn-dos__head {
-          display: flex; align-items: stretch; flex: 0 0 auto; cursor: move; user-select: none; touch-action: none;
-          background: #1a0d0d; border-bottom: 1px solid #5a1212;
+          display: flex; align-items: center; gap: 8px; flex: 0 0 auto; height: 38px; padding: 0 4px 0 10px;
+          cursor: move; user-select: none; touch-action: none; background: #1a0d0d; border-bottom: 1px solid #5a121299;
         }
-        .pbn-dos__tabs { display: flex; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
+        .pbn-dos__grip { color: #7a3a3a; font-size: 1rem; line-height: 1; }
+        .pbn-dos__title { flex: 1; min-width: 0; color: #9a8a7a; font: 600 .8rem/1 system-ui, 'Segoe UI', sans-serif; letter-spacing: .14em; text-transform: uppercase; white-space: nowrap; }
+        .pbn-dos__tabs { display: flex; flex: 0 0 auto; min-width: 0; overflow-x: auto; scrollbar-width: thin; background: #160b0b; border-bottom: 1px solid #5a1212; }
+        .pbn-dos__suggest { margin: 12px 0 0; padding: 10px 12px; border: 1px solid #e0b84a66; border-radius: 5px; background: #e0b84a12; line-height: 1.45; }
+        .pbn-dos__suggest b { color: #f3e6cf; }
+        .pbn-dos__suggest-why { color: #9a8a7a; font-size: .9em; }
+        .pbn-dos__suggest-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+        .pbn-dos__btn--primary { background: #9e2b2b; border-color: #9e2b2b; color: #f3e6cf; }
+        .pbn-dos__btn--primary:hover { background: #b33434; color: #fff; }
         .pbn-dos__tab { display: flex; align-items: stretch; flex: 0 1 auto; min-width: 90px; max-width: 220px; border-right: 1px solid #5a121266; }
         .pbn-dos__tab--on { flex-shrink: 0; max-width: 260px; }
         .pbn-dos__tab--on { background: #120a0a; box-shadow: inset 0 -2px #9e2b2b; }
