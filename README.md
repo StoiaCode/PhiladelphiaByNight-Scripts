@@ -395,6 +395,12 @@ Names, notes and saved looks are stored per browser/device and included in the t
 
 ---
 
+## 24-Hour Clock & Celsius (toolkit only, off by default)
+
+Switch it on in the toolkit panel to see the room info panel's **Local Time** in 24-hour time (8:10 PM → 20:10, 12:05 AM → 00:05) and its weather temperatures in °C (54°F → 12°C). Each conversion has its own toggle. Only the time and weather box is touched; the chat and room descriptions stay as written.
+
+---
+
 ## Updating
 
 Userscript managers check `@updateURL` periodically and offer updates

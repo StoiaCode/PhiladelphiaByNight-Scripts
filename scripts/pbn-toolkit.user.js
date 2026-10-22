@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.5.0
+// @version      1.6.0
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -22,7 +22,7 @@
     return;
   }
 
-  const TK_VERSION = '1.5.0';
+  const TK_VERSION = '1.6.0';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -43,7 +43,8 @@
 
   const settings = loadSettings();
 
-  function isEnabled(id) { return settings.enabled[id] !== false; }
+  // A module is on unless switched off; defaultOff ones start off until switched on.
+  function isEnabled(id) { return settings.enabled[id] ?? !MODULES.find(m => m.id === id)?.defaultOff; }
 
   function opt(id, key, fallback) {
     const v = settings.opts[id]?.[key];
@@ -274,6 +275,7 @@
   // ==========================================================================
   // MODULE REGISTRY
   //   { id, name, description,
+  //     defaultOff?: true — starts switched off until the player turns it on
   //     early?(core)  — runs at document-start (styles that must beat first paint)
   //     start(core)   — runs once the page DOM is ready
   //     settings?: [{ key, label, type: 'toggle'|'number'|'select', default, options?, min?, max?, help? }]
@@ -449,6 +451,53 @@
         if (observer) observer.disconnect();
         observer = null; container = null;
       });
+    },
+  });
+
+  // ==========================================================================
+  // MODULE: 24h & Celsius
+  // ==========================================================================
+
+  defineModule({
+    id: 'units',
+    name: '24-Hour Clock & Celsius',
+    description: "Shows the game's clock in 24-hour time and temperatures in °C, in the room info panel (time and weather).",
+    defaultOff: true,
+    settings: [
+      { key: 'time', label: '24-hour clock (8:10 PM → 20:10)', type: 'toggle', default: true },
+      { key: 'temp', label: 'Celsius (54°F → 12°C)', type: 'toggle', default: true },
+    ],
+    start(c) {
+      const TIME = opt('units', 'time', true), TEMP = opt('units', 'temp', true);
+      if (!TIME && !TEMP) return;
+      const SCOPE = '.weather-time-block, .weather-block, .users-here';
+      const pad = n => String(n).padStart(2, '0');
+      const toC = f => Math.round((Number(f) - 32) * 5 / 9);
+      // Converted text never matches again ("20:10", "12°C"), so re-running is harmless.
+      function convert(t) {
+        if (TIME) t = t.replace(/\b(1[0-2]|0?[1-9])(?::([0-5]\d))?\s*([AaPp])\.?\s?[Mm]\b\.?/g,
+          (m, h, min, ap) => pad(Number(h) % 12 + (/p/i.test(ap) ? 12 : 0)) + ':' + (min || '00'));
+        if (TEMP) t = t
+          .replace(/(-?\d+(?:\.\d+)?)\s*°\s*F\b/g, (m, f) => toC(f) + '°C')
+          .replace(/(-?\d+(?:\.\d+)?)\s+degrees\s+Fahrenheit\b/gi, (m, f) => toC(f) + ' degrees Celsius');
+        return t;
+      }
+      // Text nodes are changed in place: Vue keeps its own reference to them
+      // and simply overwrites the value on its next update, which we convert again.
+      function apply() {
+        document.querySelectorAll(SCOPE).forEach(el => {
+          const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+          for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+            const v = convert(n.nodeValue);
+            if (v !== n.nodeValue) n.nodeValue = v;
+          }
+        });
+      }
+      const observer = new MutationObserver(apply);
+      c.onRoute(c.isPlay, () => {
+        observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+        apply();
+      }, () => observer.disconnect());
     },
   });
 
@@ -3259,7 +3308,7 @@
 
     const body = el('div', { className: 'pbn-tk__body' });
     MODULES.forEach(m => {
-      const on = s.enabled[m.id] !== false;
+      const on = s.enabled[m.id] ?? !m.defaultOff;
       const row = el('div', { className: 'pbn-tk-mod' + (on ? '' : ' pbn-tk-mod--off') });
       const sw = el('label', { className: 'pbn-tk-switch', title: on ? 'Turn off' : 'Turn on' });
       const box = el('input', { type: 'checkbox', checked: on });
