@@ -351,7 +351,7 @@ Give people your own names. Someone you only know as *"a man in a grey coat"* in
   - the **You see:** list
   - **You look at …**
   - "Among them, …" when peering into a room
-  - `[SYSTEM]` lines that start with someone (arrivals, departures, "X looks at Y.")
+  - `[SYSTEM]` lines about someone (arrivals, departures, "X looks around.", "X looks at Y.", "X whispers to Y."). The game doesn't mark where a name ends there, so this works for anyone already seen speaking, emoting or in a **You see:** list this session, plus anyone you've named, noted or looked at
   - the "X is typing" indicator
 
   Coloured short descs work too (`a <tall figure> in a <long coat>`); switching back to the game's text restores the colours.

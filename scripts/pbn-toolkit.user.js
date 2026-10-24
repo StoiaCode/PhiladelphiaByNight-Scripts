@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.7.1
+// @version      1.7.2
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.7.1';
+  const TK_VERSION = '1.7.2';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -2270,29 +2270,23 @@
       function savedKeyAt(low, at, keys) {
         return keys.find(k => low.startsWith(k, at) && (low.length === at + k.length || NAME_END.test(low[at + k.length])));
       }
+      // Names seen this session where the game marks them for certain (speakers,
+      // "You see:", "You look at"). [SYSTEM] lines don't show where a name
+      // ends, so only these, saved people and people with a saved look match there.
+      const seenNames = new Set();
+      let rescanQueued = false;
+      function knownKeys() {
+        const looks = Object.keys(looksFor());
+        return [...new Set([...index.keys(), ...seenNames, ...looks])].sort((a, b) => b.length - a.length);
+      }
       function process(root) {
-        const keys = [...index.keys()].sort((a, b) => b.length - a.length);
         // Speakers: <span class="chat-name-…">Name</span>, "Name Rolls..." on roll cards.
         root.querySelectorAll('[class*="chat-name"]').forEach(n => {
           const map = mapText(Array.from(n.childNodes));
           const roll = map.text.match(/^(.*?) ?Rolls\.\.\. ?$/);
           wrapAt(map, 0, roll ? roll[1].length : map.text.length);
         });
-        // [SYSTEM] lines: "X arrives…", "X heads south", "X looks at Y." Where a
-        // desc ends can't be told there, so only saved names match.
-        if (keys.length) root.querySelectorAll('p > span.text-orange-9:first-child').forEach(label => {
-          if (label.textContent.trim() !== '[SYSTEM]') return;
-          const map = mapText(runUntil(label.nextSibling, /^(BR|DIV)$/));
-          const low = map.text.toLowerCase();
-          const spans = [];
-          const k = savedKeyAt(low, 0, keys);
-          if (k) spans.push([0, k.length]);
-          const at = low.match(/ looks at (.+?)\.$/);
-          if (at && index.has(at[1])) { const end = at.index + at[0].length - 1; spans.push([end - at[1].length, end]); }
-          spans.sort((a, b) => b[0] - a[0]).forEach(([s, e]) => wrapAt(map, s, e));
-        });
-        // look output: "• Name <em>(breathing)</em>", "You look at Name <em>…" /
-        // "<br>", and <em>Among them, Name.</em> when peering into a room.
+        // look output: "• Name <em>(breathing)</em>", "You look at Name <em>…" / "<br>".
         root.querySelectorAll('p.look-output').forEach(p => {
           for (const node of Array.from(p.childNodes)) {
             if (node.nodeType !== 3) continue;
@@ -2301,11 +2295,35 @@
             const map = mapText(runUntil(node, /^(EM|BR|DIV|STRONG)$/));
             wrapAt(map, map.text.indexOf(lead[1]) + lead[1].length, map.text.length);
           }
-          p.querySelectorAll(':scope > em').forEach(em => {
-            const map = mapText(Array.from(em.childNodes));
-            const m = map.text.match(/^(Among them, )(.+?)\.?$/);
-            if (m && index.has(keyOf(m[2]))) wrapAt(map, m[1].length, m[1].length + m[2].length);
-          });
+        });
+        // Remember them. A new name can match [SYSTEM] lines already on screen,
+        // so those get another pass.
+        const before = seenNames.size;
+        root.querySelectorAll('[class*="chat-name"] .' + NM + ', p.look-output > .' + NM).forEach(sp => seenNames.add(keyOf(sp.dataset.pbnNmOrig)));
+        if (seenNames.size > before && root.isConnected && !rescanQueued) {
+          rescanQueued = true;
+          setTimeout(() => { rescanQueued = false; const cont = document.querySelector(CHAT); if (cont) processRow(cont); }, 0);
+        }
+        const keys = knownKeys();
+        if (!keys.length) return;
+        const known = new Set(keys);
+        // [SYSTEM] lines: "X arrives…", "X looks around.", "X looks at Y.", "X whispers to Y."
+        root.querySelectorAll('p > span.text-orange-9:first-child').forEach(label => {
+          if (label.textContent.trim() !== '[SYSTEM]') return;
+          const map = mapText(runUntil(label.nextSibling, /^(BR|DIV)$/));
+          const low = map.text.toLowerCase();
+          const spans = [];
+          const k = savedKeyAt(low, 0, keys);
+          if (k) spans.push([0, k.length]);
+          const at = low.match(/ (?:looks at|whispers to) (.+?)\.$/);
+          if (at && known.has(at[1])) { const e = at.index + at[0].length - 1; spans.push([e - at[1].length, e]); }
+          spans.sort((a, b) => b[0] - a[0]).forEach(([s, e]) => wrapAt(map, s, e));
+        });
+        // <em>Among them, Name.</em> when peering into a room.
+        root.querySelectorAll('p.look-output > em').forEach(em => {
+          const map = mapText(Array.from(em.childNodes));
+          const m = map.text.match(/^(Among them, )(.+?)\.?$/);
+          if (m && known.has(keyOf(m[2]))) wrapAt(map, m[1].length, m[1].length + m[2].length);
         });
       }
       function render(span, forLog = false) {
