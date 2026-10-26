@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.7.2
+// @version      1.7.3
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.7.2';
+  const TK_VERSION = '1.7.3';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -508,12 +508,12 @@
     SHARED_KEY: 'pbn-commands',          // shared list (copied over from the standalone script)
     BY_CHAR_KEY: 'pbn-commands-by-char', // { [character]: list }
     DEFAULTS: [
-      { label: 'OOC', cmd: '/ooc' }, { label: 'LOOC', cmd: '/looc' }, { label: 'Say', cmd: '/say' },
-      { label: 'Emote', cmd: '/emote' }, { label: 'Hide', cmd: '/hide', submit: true },
-      { label: 'Look', cmd: '/look', expand: true }, { label: 'Auspex', cmd: '/auspex heighten', submit: true },
-      { label: 'News', cmd: '/news', expand: true }, { label: 'SetDesc', cmd: '/setdesc', submit: true },
-      { label: 'Char', cmd: '/char', submit: true }, { label: 'Roll', cmd: '/roll', submit: true },
-      { label: 'Journal', cmd: '/journal', submit: true },
+      { label: 'LOOC', cmd: '/looc' }, { label: 'Say', cmd: '/say' }, { label: 'Emote', cmd: '/emote' },
+      { label: 'Craft', cmd: '/craft', submit: true }, { label: 'Look', cmd: '/look', expand: true },
+      { label: 'SetDesc', cmd: '/setdesc', submit: true }, { label: 'Char', cmd: '/char', submit: true },
+      { label: 'Roll', cmd: '/roll', submit: true }, { label: 'Journal', cmd: '/journal', submit: true },
+      { label: 'Drift', cmd: '/drift', submit: true }, { label: 'Scavenge', cmd: '/scavenge', submit: true },
+      { label: 'Harvest', cmd: '/harvest', submit: true },
     ],
     openEditor: null,
   };

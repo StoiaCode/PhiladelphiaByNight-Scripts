@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PbN Command Buttons
 // @namespace    stoia.red
-// @version      1.4.1
-// @description  Adds quick-command buttons (/ooc /say /emote /pose ...) above the MUSH input box. Buttons are editable in-page via the userscript menu (no script editing needed).
+// @version      1.4.2
+// @description  Adds quick-command buttons (/looc /say /emote /look ...) above the MUSH input box. Buttons are editable in-page via the userscript menu (no script editing needed).
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
 // @grant        GM_getValue
@@ -61,18 +61,18 @@
   //   expand: true  -> 1st click opens an inline field, 2nd click sends
   //                    cmd + typed text. Fast double-click sends bare cmd.
   const DEFAULT_COMMANDS = [
-    { label: 'OOC',     cmd: '/ooc'     },
-    { label: 'LOOC',    cmd: '/looc'    },
-    { label: 'Say',     cmd: '/say'     },
-    { label: 'Emote',   cmd: '/emote'   },
-    { label: 'Hide',    cmd: '/hide',            submit: true },
-    { label: 'Look',    cmd: '/look',            expand: true },
-    { label: 'Auspex',  cmd: '/auspex heighten', submit: true },
-    { label: 'News',    cmd: '/news',            expand: true },
-    { label: 'SetDesc', cmd: '/setdesc',         submit: true },
-    { label: 'Char',    cmd: '/char',            submit: true },
-    { label: 'Roll',    cmd: '/roll',            submit: true },
-    { label: 'Journal', cmd: '/journal',         submit: true },
+    { label: 'LOOC',     cmd: '/looc'     },
+    { label: 'Say',      cmd: '/say'      },
+    { label: 'Emote',    cmd: '/emote'    },
+    { label: 'Craft',    cmd: '/craft',    submit: true },
+    { label: 'Look',     cmd: '/look',     expand: true },
+    { label: 'SetDesc',  cmd: '/setdesc',  submit: true },
+    { label: 'Char',     cmd: '/char',     submit: true },
+    { label: 'Roll',     cmd: '/roll',     submit: true },
+    { label: 'Journal',  cmd: '/journal',  submit: true },
+    { label: 'Drift',    cmd: '/drift',    submit: true },
+    { label: 'Scavenge', cmd: '/scavenge', submit: true },
+    { label: 'Harvest',  cmd: '/harvest',  submit: true },
   ];
 
   // Leave '' for auto-detection. If auto picks the wrong field, inspect the

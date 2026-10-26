@@ -111,7 +111,7 @@ Example:
 
 ```json
 [
-  { "label": "OOC",   "cmd": "/ooc" },
+  { "label": "LOOC",  "cmd": "/looc" },
   { "label": "Say",   "cmd": "/say" },
   { "label": "Hide",  "cmd": "/hide", "submit": true },
   { "label": "Look",  "cmd": "/look", "expand": true }
