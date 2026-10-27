@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.8.0
+// @version      1.8.1
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.8.0';
+  const TK_VERSION = '1.8.1';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -2049,7 +2049,7 @@
     id: 'names',
     name: 'Personal Names, Notes & Dossiers',
     description: "Click a name or short desc in the chat for that person's dossier: your own name for them, your notes (Markdown) and their last /look. Exact matches only, kept per character.",
-    note: "Your names get a dotted gold underline and a ✦, people you only have notes on a grey dotted underline. The badge icon by the command box flips between your names and the game's text; right-click it to find anyone you've named or noted.",
+    note: "Your names get a dotted gold underline and a ✦, people you only have notes on a grey dotted underline. The toolkit's section in the Settings tab has People & notes (everyone you've named or noted) and a switch between your names and the game's text.",
     settings: [
       { key: 'cards', label: 'Dossiers: clicking a name opens their dossier window (right-click for the quick menu)', type: 'toggle', default: true },
       { key: 'autoOpen', label: 'Open the dossier when you /look at someone', type: 'toggle', default: true },
@@ -2381,7 +2381,6 @@
         const cont = document.querySelector(CHAT);
         if (cont) processRow(cont);
         syncTyping();
-        refreshButton();
         renderDossier(false);
       }
       let typingObserver = null, column = null;
@@ -2421,7 +2420,6 @@
           content: '✦'; display: inline-block; margin-left: 2px; font-size: .7em; line-height: 0; vertical-align: super;
           color: #e0b84a; font-style: normal; font-weight: normal; text-decoration: none;
         }
-        #pbn-nm-quick.pbn-nm-quick--on { color: #e0b84a !important; }
         .pbn-nm-orig { padding: 0 16px 8px; color: #e8ddd0; font-size: 1rem; font-style: italic; line-height: 1.35; overflow-wrap: anywhere; }
         .pbn-nm-form { display: flex; gap: 6px; padding: 2px 16px 8px; }
         .pbn-nm-input {
@@ -2636,12 +2634,18 @@
         renderEditor(menu, orig, false);
         c.openPopover(trigger, menu);
       }
-      function openList() {
-        const btn = document.getElementById('pbn-nm-quick');
-        if (!btn) { alert('Your names are listed from the play page (the badge icon by the command box).'); return; }
+      // Opens below the button it came from (Settings tab), or near the top
+      // middle of the page when opened from the toolkit panel.
+      function openList(anchor) {
+        let at = anchor?.isConnected ? anchor : null;
+        if (!at) {
+          at = document.getElementById('pbn-nm-anchor') || c.el('div', { id: 'pbn-nm-anchor' });
+          at.style.cssText = 'position:fixed;left:50%;top:12vh;width:230px;height:0;pointer-events:none';
+          if (!at.isConnected) document.body.append(at);
+        }
         const menu = newMenu();
         renderList(menu);
-        c.openPopover(btn, menu, { above: true });
+        c.openPopover(at, menu);
         if (!menu.querySelector('.pbn-nm-filter')) menu.querySelector('.pbn-tk-menu__item')?.focus();
       }
 
@@ -2658,31 +2662,6 @@
         if (!span || !CARDS) return;
         e.preventDefault();
         openEditor(span, span.dataset.pbnNmOrig);
-      }
-
-      // ---- Toolbar badge: click flips your names / the game's text,
-      // right-click lists the names.
-      function refreshButton() {
-        const btn = document.getElementById('pbn-nm-quick');
-        if (!btn) return;
-        const n = Object.values(book).filter(e => e.name).length;
-        const mine = view === 'mine';
-        btn.classList.toggle('pbn-nm-quick--on', mine && n > 0);
-        btn.setAttribute('aria-pressed', String(mine));
-        const title = mine
-          ? `Showing your names (${n} for ${bookChar}). Click to show the game's text; right-click for everyone you've named or noted.`
-          : "Showing the game's text. Click to show your names again; right-click for everyone you've named or noted.";
-        if (btn.title !== title) btn.title = title;
-      }
-      function ensureButton() {
-        if (document.getElementById('pbn-nm-quick')) return;
-        const btn = makeIconButton('pbn-nm-quick', 'badge', 'Personal names');
-        if (!btn) return;
-        btn.removeAttribute('aria-haspopup');
-        btn.removeAttribute('aria-expanded');
-        btn.addEventListener('click', () => { close(); toggleView(); });
-        btn.addEventListener('contextmenu', e => { e.preventDefault(); openList(); });
-        refreshButton();
       }
 
       function onStorage(e) {
@@ -3224,6 +3203,8 @@
 
       namesApi = {
         openList,
+        toggleView,
+        showingMine: () => view === 'mine',
         // Save Log: restores the game text in a copy of a message, or with
         // withNames writes your names into it.
         prepareLogCopy(root, withNames) {
@@ -3240,7 +3221,6 @@
       c.onRoute(c.isPlay, () => {
         loadBook();
         const run = () => {
-          ensureButton();
           syncContainer();
           if ((c.getCharName() || 'default') !== bookChar) { closeDossier(); loadBook(); looksCache = null; refreshAll(); }
         };
@@ -3274,7 +3254,7 @@
     id: 'roll-log',
     name: 'Roll Log',
     description: 'Keeps running statistics of your own rolls, per character: how often you rolled what, successes, 1s, 10s and botches, next to the exact odds. No dates or individual dice are stored.',
-    note: 'Open it with the dice icon by the command box. Only rolls made while the page is open count; rolls from the separate Roll Sampler are left out.',
+    note: 'Open it from the toolkit section of the Settings tab ("Roll log"). Only rolls made while the page is open count; rolls from the separate Roll Sampler are left out.',
     actions: [{ label: 'Open roll log…', run: () => rollLogApi?.open() }],
     start(c) {
       // { [character]: { [labels|pool|diff]: { labels, pool, diff, n, dice, ones, tens, sux, botches, fails, hist: { [net]: count } } } }
@@ -3465,18 +3445,9 @@
       }
       rollLogApi = { open };
 
-      function ensureButton() {
-        if (document.getElementById('pbn-rl-quick')) return;
-        const btn = makeIconButton('pbn-rl-quick', 'casino', 'Roll log');
-        if (!btn) return;
-        btn.removeAttribute('aria-haspopup');
-        btn.removeAttribute('aria-expanded');
-        btn.addEventListener('click', open);
-      }
-
       let tick = null;
       c.onRoute(c.isPlay, () => {
-        const run = () => { ensureButton(); syncHook(); };
+        const run = () => syncHook();
         run();
         tick = setInterval(run, 1000);
       }, () => {
@@ -3575,7 +3546,7 @@
     .pbn-tk-btn:focus-visible { outline: 2px solid #e0b84a; outline-offset: -2px; }
     .pbn-tk-btn--primary { background: #9e2b2b; color: #f3e6cf; border-color: #9e2b2b; }
     .pbn-tk-btn--primary:hover { background: #b33434; color: #fff; }
-    .pbn-tk-section .pbn-tk-open { margin: 6px 0 4px; }
+    .pbn-tk-section .pbn-tk-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 4px; }
   `;
 
   function legacyState(id) { return document.documentElement.getAttribute(`data-pbn-legacy-${id}`); }
@@ -3753,10 +3724,24 @@
     const divider = el('div', { className: 'settings-filter-divider', textContent: 'PbN Toolkit' });
     copyScopeAttrs(refSection || tab, section);
     copyScopeAttrs(refDivider || tab, divider);
-    const open = el('button', { type: 'button', className: 'pbn-tk-btn pbn-tk-open', textContent: 'Open PbN Toolkit' });
-    open.title = 'Switch toolkit features on or off and change their settings (Alt+Shift+T)';
-    open.addEventListener('click', openPanel);
-    section.append(divider, open);
+    const btn = (text, title, fn) => {
+      const b = el('button', { type: 'button', className: 'pbn-tk-btn', textContent: text, title });
+      b.addEventListener('click', () => fn(b));
+      return b;
+    };
+    const row = el('div', { className: 'pbn-tk-row' },
+      btn('Open PbN Toolkit', 'Switch toolkit features on or off and change their settings (Alt+Shift+T)', openPanel));
+    // Things opened now and then live here rather than by the command box.
+    if (status.names === 'on' && namesApi) {
+      row.append(btn('People & notes', "Everyone you've named, noted or looked at, for this character", b => namesApi.openList(b)));
+      const viewLabel = () => (namesApi.showingMine() ? "Show game's text" : 'Show my names');
+      row.append(btn(viewLabel(), "Switch between your names for people and the game's own text (e.g. for screenshots)", b => {
+        namesApi.toggleView();
+        b.textContent = viewLabel();
+      }));
+    }
+    if (status['roll-log'] === 'on' && rollLogApi) row.append(btn('Roll log', 'Statistics of your rolls for this character', () => rollLogApi.open()));
+    section.append(divider, row);
     tab.append(section);
   }
 

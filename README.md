@@ -390,7 +390,10 @@ All three behaviours can be switched off in the toolkit panel: dossiers on click
 - **Show the game's text for them** — turns your name off for just this person without forgetting it.
 - **Forget this person** — deletes the name and notes (asks first if there are notes).
 
-A **badge icon** by the command box flips *everything* between your names and the game's text, which is handy right before a screenshot. It's gold while your names are showing. **Right-click** it to look people up (picking someone opens their dossier): everyone you've named or taken notes on for this character, with a search box that matches names, short descs and note text (also under **People & notes…** in the toolkit panel). Press Enter to open the first match.
+The toolkit's section in the in-game **Settings** tab has two buttons for this:
+
+- **Show game's text / Show my names** flips *everything* between your names and the game's text, which is handy right before a screenshot.
+- **People & notes** looks people up (picking someone opens their dossier): everyone you've named or taken notes on for this character, with a search box that matches names, short descs and note text. Press Enter to open the first match. It's also under **People & notes…** in the toolkit panel.
 
 **Chat Log:** Search finds people under either name. **Save Log** writes the game's text by default; switch *Save Log writes* to *my names* in the toolkit panel to get your names in the file instead.
 
@@ -402,7 +405,7 @@ Names, notes and saved looks are stored per browser/device and included in the t
 
 Keeps running statistics of your own rolls, per character, without storing dates or individual dice. Every roll you make (private or public) is added to a line for what you rolled, e.g. *Dexterity + Firearms, 12 dice, difficulty 6*, which counts the rolls, successes, botches, failures and the 1s and 10s among the dice.
 
-Open it with the **dice icon** by the command box (or *Open roll log…* in the toolkit panel). Each line shows your numbers next to the exact V20 odds for that pool and difficulty, in brackets; a value turns red or green once it's clearly worse or better than that over 10+ rolls. **Reset this character** clears that character's log.
+Open it with **Roll log** in the toolkit's section of the in-game **Settings** tab (or *Open roll log…* in the toolkit panel). Each line shows your numbers next to the exact V20 odds for that pool and difficulty, in brackets; a value turns red or green once it's clearly worse or better than that over 10+ rolls. **Reset this character** clears that character's log.
 
 Only rolls made while the page is open count, so reloading or reconnecting doesn't count old rolls twice. Other players' rolls are ignored. The expected values assume no specialty and no Willpower.
 
