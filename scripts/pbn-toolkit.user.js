@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.7.3
+// @version      1.7.4
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.7.3';
+  const TK_VERSION = '1.7.4';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -2280,9 +2280,11 @@
         return [...new Set([...index.keys(), ...seenNames, ...looks])].sort((a, b) => b.length - a.length);
       }
       function process(root) {
-        // Speakers: <span class="chat-name-…">Name</span>, "Name Rolls..." on roll cards.
+        // Speakers: <span class="chat-name-…">Name</span>, "Name Rolls..." on roll
+        // cards. Your own private rolls say "You Roll...": no name there.
         root.querySelectorAll('[class*="chat-name"]').forEach(n => {
           const map = mapText(Array.from(n.childNodes));
+          if (/^You Roll\.\.\. ?$/i.test(map.text)) return;
           const roll = map.text.match(/^(.*?) ?Rolls\.\.\. ?$/);
           wrapAt(map, 0, roll ? roll[1].length : map.text.length);
         });

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Roll Sampler
 // @namespace    stoia.red
-// @version      1.0.0
+// @version      1.0.1
 // @description  Rolls the /roll dialog's current setup N times as private rolls and compares the results with the exact V20 odds.
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -150,7 +150,8 @@
     if (card) {
       const from = norm($('.roll-card-from', card)?.textContent);
       const me = myName();
-      if (from && me && !from.toLowerCase().includes(me.toLowerCase())) return null; // someone else's roll
+      // Private rolls read "You Roll...", public ones "<your name> Rolls..."; anything else is someone else's roll.
+      if (from && !/^You Roll\b/i.test(from) && !(me && from.toLowerCase().includes(me.toLowerCase()))) return null;
     } else if (!/\broll/i.test(text)) return null;
     const res = norm($('.roll-card-result', root)?.textContent) || text;
     const faces = $$('.roll-chip', root).map(c => Number(c.textContent)).filter(n => n >= 1 && n <= 10);
