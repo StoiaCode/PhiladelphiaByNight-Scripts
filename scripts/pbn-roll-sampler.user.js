@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Roll Sampler
 // @namespace    stoia.red
-// @version      1.0.1
+// @version      1.0.2
 // @description  Rolls the /roll dialog's current setup N times as private rolls and compares the results with the exact V20 odds.
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -54,12 +54,66 @@
   }
   // (menus are position:fixed, so offsetParent can't tell if one is showing)
   const openMenu = () => $$('.q-menu').find(m => m.getClientRects().length && $('.q-item', m)) || null;
-  // Opens a QSelect, finds the option (scrolling the list, which only draws
-  // part of it at a time) and clicks it.
+  // The Quasar select component behind a field: the dialog is its own Vue app
+  // (its container carries _vnode), walked down to the component whose root
+  // element is this field. Its toggleOption() selects any option, including
+  // ones the dropdown hasn't drawn yet.
+  function selectComponent(field) {
+    let host = field;
+    while (host && !host._vnode) host = host.parentElement;
+    if (!host) return null;
+    const stack = [host._vnode];
+    for (let guard = 0; stack.length && guard < 20000; guard++) {
+      const v = stack.pop();
+      if (!v || typeof v !== 'object') continue;
+      if (Array.isArray(v)) { stack.push(...v); continue; }
+      const c = v.component;
+      if (c) {
+        if (c.vnode.el === field && typeof c.proxy?.toggleOption === 'function') return c;
+        stack.push(c.subTree);
+      }
+      if (v.suspense) stack.push(v.suspense.activeBranch);
+      if (Array.isArray(v.children)) stack.push(v.children);
+    }
+    return null;
+  }
+  // Fallback: arrow keys through the open list (the select scrolls itself to
+  // the highlighted option), Enter on the right one.
+  async function pickByKeys(field, matches) {
+    const target = $('.q-select__focus-target', field);
+    if (!target) return false;
+    target.focus();
+    const key = (k, code) => target.dispatchEvent(new KeyboardEvent('keydown', { key: k, code: k, keyCode: code, which: code, bubbles: true }));
+    if (!openMenu()) { key('ArrowDown', 40); await waitFor(openMenu, 1500); }
+    if (!openMenu()) return false;
+    let first = null;
+    for (let i = 0; i < 120; i++) {
+      key('ArrowDown', 40);
+      await sleep(40);
+      const cur = norm($('.q-manual-focusable--focused', openMenu() || document.createElement('div'))?.textContent);
+      if (!cur) continue;
+      if (matches(cur)) { key('Enter', 13); await waitFor(() => !openMenu(), 1500); return true; }
+      if (first === null) first = cur; else if (cur === first) break; // went all the way round
+    }
+    return false;
+  }
   async function pick(dlg, label, wanted) {
     if (!wanted || selectedText(dlg, label) === wanted) return true;
     const field = fieldOf(dlg, label);
     if (!field) throw new Error(`field "${label}" not found`);
+    const short = wanted.replace(/\s*\(.*$/, '');
+    const matches = t => t === wanted || t.replace(/\s*\(.*$/, '') === short;
+    const done = () => matches(selectedText(dlg, label));
+    // 1. the select's own toggleOption
+    const qs = selectComponent(field);
+    const opt = qs && (qs.props.options || []).find(o => matches(norm(qs.proxy.getOptionLabel(o))));
+    if (opt) {
+      qs.proxy.toggleOption(opt);
+      if (await waitFor(done, 1500)) return true;
+    }
+    // 2. keyboard
+    if (await pickByKeys(field, matches) && await waitFor(done, 1500)) return true;
+    // 3. click through the drawn options, scrolling
     $('.q-field__control', field).click();
     let menu = await waitFor(openMenu, 800);
     if (!menu) {
@@ -69,10 +123,9 @@
       menu = await waitFor(openMenu, 1500);
     }
     if (!menu) throw new Error(`couldn't open "${label}"`);
-    const short = wanted.replace(/\s*\(.*$/, '');
     for (let i = 0; i < 40; i++) {
       const items = $$('.q-item', menu);
-      const hit = items.find(it => norm(it.textContent) === wanted) || items.find(it => norm(it.textContent).replace(/\s*\(.*$/, '') === short);
+      const hit = items.find(it => norm(it.textContent) === wanted) || items.find(it => matches(norm(it.textContent)));
       if (hit) { hit.click(); await waitFor(() => !openMenu(), 1500); return true; }
       const before = menu.scrollTop;
       menu.scrollTop += Math.max(100, menu.clientHeight - 40);
