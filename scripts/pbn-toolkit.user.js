@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.8.1
+// @version      1.8.2
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.8.1';
+  const TK_VERSION = '1.8.2';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -220,13 +220,19 @@
 
     function place() {
       const r = trigger.getBoundingClientRect();
+      menu.style.maxHeight = ''; // measure the full height first
       const mw = menu.offsetWidth, mh = menu.offsetHeight;
       menu.style.left = `${Math.min(Math.max(8, r.right - mw), window.innerWidth - mw - 8)}px`;
-      const below = r.bottom + 4, upTop = r.top - 4 - mh;
-      const top = above
-        ? (upTop >= 8 ? upTop : below)
-        : (below + mh <= window.innerHeight ? below : Math.max(8, upTop));
-      menu.style.top = `${top}px`;
+      // Room on each side of the trigger, keeping 8px off the window edge.
+      const roomUp = r.top - 4 - 8, roomDown = window.innerHeight - r.bottom - 4 - 8;
+      // The preferred side if it fits, else the other if that fits, else
+      // whichever is bigger, capped to it and scrolling (long preset lists).
+      const up = above
+        ? (mh <= roomUp || (mh > roomDown && roomUp >= roomDown))
+        : !(mh <= roomDown || (mh > roomUp && roomDown >= roomUp));
+      const room = up ? roomUp : roomDown;
+      if (mh > room) { menu.style.maxHeight = `${Math.max(80, room)}px`; menu.style.overflowY = 'auto'; }
+      menu.style.top = `${up ? r.top - 4 - Math.min(mh, Math.max(80, room)) : r.bottom + 4}px`;
     }
 
     function onDown(e) { if (!menu.contains(e.target) && !trigger.contains(e.target)) api.close(); }
@@ -3463,7 +3469,8 @@
 
   const SHARED_CSS = `
     .pbn-tk-menu {
-      position: fixed; z-index: 9000; display: flex; flex-direction: column; min-width: 230px; max-width: 360px; padding: 4px 0;
+      position: fixed; z-index: 9000; display: flex; flex-direction: column; min-width: 230px; max-width: 360px; padding: 4px 0; box-sizing: border-box;
+      scrollbar-width: thin; scrollbar-color: #5a1212 #120a0a;
       background: #120a0a; border: 1px solid #5a1212; border-radius: 6px; box-shadow: 0 8px 28px #000a;
       font-family: Georgia, 'Times New Roman', serif;
     }

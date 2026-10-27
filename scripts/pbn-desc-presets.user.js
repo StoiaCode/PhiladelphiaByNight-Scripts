@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Description Presets
 // @namespace    stoia.red
-// @version      1.0.1
+// @version      1.0.2
 // @description  Save /setdesc looks (short/full description, arrive/depart messages) as per-character presets and swap between them in one click.
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -191,7 +191,8 @@
 
     .pbn-dp-menu {
       position: fixed; z-index: 9000; display: flex; flex-direction: column;
-      min-width: 220px; max-width: 360px; padding: 4px 0;
+      min-width: 220px; max-width: 360px; padding: 4px 0; box-sizing: border-box;
+      scrollbar-width: thin; scrollbar-color: #5a1212 #120a0a;
       background: #120a0a; border: 1px solid #5a1212; border-radius: 6px;
       box-shadow: 0 8px 28px #000a;
       font-family: Georgia, 'Times New Roman', serif;
@@ -549,11 +550,16 @@
     document.body.appendChild(menu);
 
     // The command bar sits at the bottom of the screen: open upward,
-    // right-aligned to the icon.
+    // right-aligned to the icon. A list too long for either side goes on
+    // the bigger one, capped to it and scrolling.
     const r = trigger.getBoundingClientRect();
     const mw = menu.offsetWidth, mh = menu.offsetHeight;
     menu.style.left = `${Math.min(Math.max(8, r.right - mw), window.innerWidth - mw - 8)}px`;
-    menu.style.top = `${r.top - 6 - mh >= 8 ? r.top - 6 - mh : r.bottom + 6}px`;
+    const roomUp = r.top - 6 - 8, roomDown = window.innerHeight - r.bottom - 6 - 8;
+    const up = mh <= roomUp || (mh > roomDown && roomUp >= roomDown);
+    const room = Math.max(80, up ? roomUp : roomDown);
+    if (mh > room) { menu.style.maxHeight = `${room}px`; menu.style.overflowY = 'auto'; }
+    menu.style.top = `${up ? r.top - 6 - Math.min(mh, room) : r.bottom + 6}px`;
 
     trigger.setAttribute('aria-expanded', 'true');
     openMenu = { menu, trigger };
