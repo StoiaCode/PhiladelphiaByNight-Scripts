@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.7.4
+// @version      1.8.0
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.7.4';
+  const TK_VERSION = '1.8.0';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -3260,6 +3260,228 @@
         observer = null; container = null; typingObserver = null; column = null;
         document.removeEventListener('click', onChatClick);
         window.removeEventListener('storage', onStorage);
+      });
+    },
+  });
+
+  // ==========================================================================
+  // MODULE: Roll Log
+  // ==========================================================================
+
+  let rollLogApi = null;
+
+  defineModule({
+    id: 'roll-log',
+    name: 'Roll Log',
+    description: 'Keeps running statistics of your own rolls, per character: how often you rolled what, successes, 1s, 10s and botches, next to the exact odds. No dates or individual dice are stored.',
+    note: 'Open it with the dice icon by the command box. Only rolls made while the page is open count; rolls from the separate Roll Sampler are left out.',
+    actions: [{ label: 'Open roll log…', run: () => rollLogApi?.open() }],
+    start(c) {
+      // { [character]: { [labels|pool|diff]: { labels, pool, diff, n, dice, ones, tens, sux, botches, fails, hist: { [net]: count } } } }
+      const KEY = 'pbn-roll-log';
+      const norm = s => String(s || '').replace(/\s+/g, ' ').trim();
+      const loadAll = () => { try { return JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { return {}; } };
+      const charName = () => c.getCharName() || 'default';
+
+      // A roll card of yours: private ones read "You Roll...", public ones
+      // "<your name> Rolls...". Others' rolls in the room are ignored.
+      function parseCard(html) {
+        if (!/roll-card/.test(html)) return null;
+        const tpl = document.createElement('template');
+        tpl.innerHTML = html;
+        const card = tpl.content.querySelector('.roll-card');
+        if (!card) return null;
+        const from = norm(card.querySelector('.roll-card-from')?.textContent);
+        const me = c.getCharName();
+        if (!/^You Roll\b/i.test(from) && !(me && from.toLowerCase().startsWith(me.toLowerCase() + ' '))) return null;
+        const meta = norm(card.querySelector('.roll-card-pool-meta')?.textContent).match(/Pool\s+(\d+)\s+vs\s+Diff\s+(\d+)/i);
+        const faces = Array.from(card.querySelectorAll('.roll-chip')).map(ch => Number(norm(ch.textContent))).filter(n => n >= 1 && n <= 10);
+        const res = norm(card.querySelector('.roll-card-result')?.textContent);
+        let m, net = 0, botch = false;
+        if ((m = res.match(/(\d+)\s+success/i))) net = Number(m[1]);
+        else if (/botch/i.test(res)) botch = true;
+        else if (!/fail/i.test(res)) return null;
+        return {
+          labels: norm(card.querySelector('.roll-card-pool-labels')?.textContent) || 'Custom pool',
+          pool: meta ? Number(meta[1]) : faces.length, diff: meta ? Number(meta[2]) : 0,
+          dice: faces.length, ones: faces.filter(f => f === 1).length, tens: faces.filter(f => f === 10).length, net, botch,
+        };
+      }
+      function record(r) {
+        if (document.documentElement.dataset.pbnRsRunning) return; // Roll Sampler at work
+        const all = loadAll();
+        const book = all[charName()] || (all[charName()] = {});
+        const k = `${r.labels}|${r.pool}|${r.diff}`;
+        const e = book[k] || (book[k] = { labels: r.labels, pool: r.pool, diff: r.diff, n: 0, dice: 0, ones: 0, tens: 0, sux: 0, botches: 0, fails: 0, hist: {} });
+        e.n++; e.dice += r.dice; e.ones += r.ones; e.tens += r.tens; e.sux += r.net;
+        if (r.botch) e.botches++; else if (!r.net) e.fails++;
+        if (!r.botch) e.hist[r.net] = (e.hist[r.net] || 0) + 1;
+        localStorage.setItem(KEY, JSON.stringify(all));
+        if (panel) renderPanel();
+      }
+
+      // Messages from the play page's own lists (RP and Activity). Whatever is
+      // there when we hook in is skipped, and so are history replays.
+      const seen = new WeakSet();
+      function drain(list) {
+        let i = list.length;
+        while (i > 0 && !seen.has(list[i - 1].__v_raw || list[i - 1])) i--;
+        for (; i < list.length; i++) {
+          const m = list[i];
+          seen.add(m.__v_raw || m);
+          if (m.isHistory) continue;
+          const r = parseCard(m.html || '');
+          if (r) record(r);
+        }
+      }
+      let hooked = null;
+      function syncHook() {
+        if (hooked && hooked.inst.isUnmounted) { hooked.stops.forEach(s => s()); hooked = null; }
+        if (hooked) return;
+        const inst = c.findPlayInstance();
+        if (!inst) return;
+        const p = inst.proxy;
+        const stops = ['messages', 'activityMessages'].map(k => {
+          p[k].forEach(m => seen.add(m.__v_raw || m));
+          return p.$watch(() => { const a = p[k]; return a.length ? a[a.length - 1] : null; }, () => drain(p[k]), { flush: 'sync' });
+        });
+        hooked = { inst, stops };
+      }
+
+      // Exact V20 odds (no specialty, no Willpower): 1s cancel successes; no
+      // successes rolled and a 1 among the dice is a botch.
+      const oddsCache = new Map();
+      function odds(n, diff) {
+        const key = n + '|' + diff;
+        if (oddsCache.has(key)) return oddsCache.get(key);
+        const pHit = Math.max(0, (11 - diff) / 10);
+        let dist = new Map([['0,0', 1]]);
+        for (let i = 0; i < n; i++) {
+          const next = new Map();
+          const add = (s, o, p) => next.set(s + ',' + o, (next.get(s + ',' + o) || 0) + p);
+          for (const [k, p] of dist) {
+            const [s, o] = k.split(',').map(Number);
+            add(s, o + 1, p * 0.1);
+            add(s + 1, o, p * pHit);
+            add(s, o, p * (0.9 - pHit));
+          }
+          dist = next;
+        }
+        let botch = 0, fail = 0, mean = 0;
+        for (const [k, p] of dist) {
+          const [s, o] = k.split(',').map(Number);
+          if (s === 0 && o > 0) botch += p;
+          else if (s - o <= 0) fail += p;
+          else mean += p * (s - o);
+        }
+        const out = { botch, fail, mean };
+        oddsCache.set(key, out);
+        return out;
+      }
+
+      // ---- the table
+      const pct = x => (x > 0 && x < 0.0005 ? '<0.1' : (100 * x).toFixed(1)) + '%';
+      let panel = null;
+      c.addStyle(`
+        #pbn-rl-panel {
+          position: fixed; inset: 0; z-index: 2147483400; display: flex; align-items: center; justify-content: center;
+          background: rgba(0,0,0,.6); font: 16px/1.45 system-ui, 'Segoe UI', sans-serif; color: #e8ddd0;
+        }
+        .pbn-rl__box {
+          width: min(1100px, 96vw); max-height: 88vh; display: flex; flex-direction: column; box-sizing: border-box;
+          background: #120a0a; border: 1px solid #5a1212; border-radius: 6px; box-shadow: 0 8px 40px #000a;
+        }
+        .pbn-rl__head { display: flex; align-items: baseline; gap: 12px; padding: 16px 20px 6px; }
+        .pbn-rl__title { font-family: TMUnicorn, Georgia, serif; font-size: 1.5rem; color: #f3e6cf; }
+        .pbn-rl__sub { color: #9a8a7a; font-size: .95rem; }
+        .pbn-rl__x { margin-left: auto; background: none; border: 0; color: #9a8a7a; font-size: 1.4rem; cursor: pointer; }
+        .pbn-rl__x:hover { color: #e8ddd0; }
+        .pbn-rl__body { overflow: auto; padding: 4px 20px 8px; }
+        .pbn-rl__body table { width: 100%; border-collapse: collapse; font-size: .95rem; }
+        .pbn-rl__body th { position: sticky; top: 0; background: #120a0a; color: #9a8a7a; font-weight: 600; font-size: .85rem; text-align: right; padding: 6px 8px; border-bottom: 1px solid #5a1212; white-space: nowrap; }
+        .pbn-rl__body td { text-align: right; padding: 6px 8px; border-bottom: 1px solid #5a121244; white-space: nowrap; }
+        .pbn-rl__body th:first-child, .pbn-rl__body td:first-child { text-align: left; white-space: normal; }
+        .pbn-rl__body td small { color: #9a8a7a; font-size: .85em; }
+        .pbn-rl__hot { color: #f0906a; }
+        .pbn-rl__cool { color: #8fc48f; }
+        .pbn-rl__empty { padding: 20px 0; color: #9a8a7a; font-style: italic; }
+        .pbn-rl__foot { display: flex; align-items: center; gap: 8px; padding: 10px 20px 14px; border-top: 1px solid #5a1212; }
+        .pbn-rl__foot span { flex: 1; color: #9a8a7a; font-size: .9rem; }
+        .pbn-rl__btn { padding: 5px 14px; border-radius: 4px; border: 1px solid #9e2b2b80; background: #120a0a; color: #c4b49a; font: inherit; font-size: .95rem; cursor: pointer; }
+        .pbn-rl__btn:hover { color: #e8ddd0; background: #5a121233; }
+      `);
+      // Observed vs expected, coloured when it's clearly off (bad luck red).
+      function vs(obs, exp, n, higherIsBad) {
+        const diff = obs - exp;
+        const sd = Math.sqrt(Math.max(exp * (1 - exp), 1e-9) / Math.max(n, 1));
+        const cls = n >= 10 && Math.abs(diff) > 2 * sd ? ((diff > 0) === higherIsBad ? 'pbn-rl__hot' : 'pbn-rl__cool') : '';
+        return `<span class="${cls}">${pct(obs)}</span> <small>(${pct(exp)})</small>`;
+      }
+      function renderPanel() {
+        const who = charName();
+        const book = loadAll()[who] || {};
+        const rows = Object.values(book).sort((a, b) => b.n - a.n);
+        panel.querySelector('.pbn-rl__sub').textContent = `${who} · ${rows.reduce((a, e) => a + e.n, 0)} rolls`;
+        const body = panel.querySelector('.pbn-rl__body');
+        if (!rows.length) { body.innerHTML = '<div class="pbn-rl__empty">No rolls recorded for this character yet. Roll something (/roll) and it shows up here.</div>'; return; }
+        const esc = s => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+        body.innerHTML = `<table><tr><th>Roll</th><th>Dice</th><th>Diff</th><th>Rolls</th><th>Avg successes <small>(exp.)</small></th><th>Botches <small>(exp.)</small></th><th>Failures <small>(exp.)</small></th><th>1s per die</th><th>10s per die</th><th>Results</th></tr>${
+          rows.map(e => {
+            const o = e.diff ? odds(e.pool, e.diff) : null;
+            const avg = (e.sux / e.n).toFixed(2);
+            const hist = Object.entries(e.hist).sort((a, b) => a[0] - b[0]).map(([k, v]) => `${k}:${v}`).join(' ');
+            return `<tr><td>${esc(e.labels)}</td><td>${e.pool}</td><td>${e.diff || '–'}</td><td>${e.n}</td>
+              <td>${avg}${o ? ` <small>(${o.mean.toFixed(2)})</small>` : ''}</td>
+              <td>${e.botches} · ${o ? vs(e.botches / e.n, o.botch, e.n, true) : pct(e.botches / e.n)}</td>
+              <td>${e.fails} · ${o ? vs(e.fails / e.n, o.fail, e.n, true) : pct(e.fails / e.n)}</td>
+              <td>${e.dice ? vs(e.ones / e.dice, 0.1, e.dice, true) : '–'}</td>
+              <td>${e.dice ? vs(e.tens / e.dice, 0.1, e.dice, false) : '–'}</td>
+              <td><small>${hist || '–'}${e.botches ? ` · botch:${e.botches}` : ''}</small></td></tr>`;
+          }).join('')}</table>`;
+      }
+      function open() {
+        if (panel) return;
+        panel = c.el('div', { id: 'pbn-rl-panel' });
+        panel.innerHTML = `<div class="pbn-rl__box" role="dialog" aria-modal="true" aria-label="Roll log">
+          <div class="pbn-rl__head"><span class="pbn-rl__title">Roll Log</span><span class="pbn-rl__sub"></span><button type="button" class="pbn-rl__x" title="Close (Esc)" aria-label="Close">×</button></div>
+          <div class="pbn-rl__body"></div>
+          <div class="pbn-rl__foot"><span>Expected values in brackets are the exact V20 odds without specialty or Willpower; red/green means clearly worse/better than that (after 10+ rolls). Results: successes:times.</span>
+          <button type="button" class="pbn-rl__btn pbn-rl__reset">Reset this character</button><button type="button" class="pbn-rl__btn pbn-rl__close">Close</button></div></div>`;
+        const close = () => { document.removeEventListener('keydown', onKey, true); panel.remove(); panel = null; };
+        const onKey = e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } };
+        panel.querySelector('.pbn-rl__x').addEventListener('click', close);
+        panel.querySelector('.pbn-rl__close').addEventListener('click', close);
+        panel.addEventListener('mousedown', e => { if (e.target === panel) close(); });
+        panel.querySelector('.pbn-rl__reset').addEventListener('click', () => {
+          if (!confirm(`Delete the roll log for ${charName()}? This can't be undone.`)) return;
+          const all = loadAll();
+          delete all[charName()];
+          localStorage.setItem(KEY, JSON.stringify(all));
+          renderPanel();
+        });
+        document.addEventListener('keydown', onKey, true);
+        document.body.append(panel);
+        renderPanel();
+      }
+      rollLogApi = { open };
+
+      function ensureButton() {
+        if (document.getElementById('pbn-rl-quick')) return;
+        const btn = makeIconButton('pbn-rl-quick', 'casino', 'Roll log');
+        if (!btn) return;
+        btn.removeAttribute('aria-haspopup');
+        btn.removeAttribute('aria-expanded');
+        btn.addEventListener('click', open);
+      }
+
+      let tick = null;
+      c.onRoute(c.isPlay, () => {
+        const run = () => { ensureButton(); syncHook(); };
+        run();
+        tick = setInterval(run, 1000);
+      }, () => {
+        clearInterval(tick);
+        if (hooked) { hooked.stops.forEach(s => s()); hooked = null; }
       });
     },
   });

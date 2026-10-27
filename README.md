@@ -398,6 +398,16 @@ Names, notes and saved looks are stored per browser/device and included in the t
 
 ---
 
+## Roll Log (toolkit only)
+
+Keeps running statistics of your own rolls, per character, without storing dates or individual dice. Every roll you make (private or public) is added to a line for what you rolled, e.g. *Dexterity + Firearms, 12 dice, difficulty 6*, which counts the rolls, successes, botches, failures and the 1s and 10s among the dice.
+
+Open it with the **dice icon** by the command box (or *Open roll log…* in the toolkit panel). Each line shows your numbers next to the exact V20 odds for that pool and difficulty, in brackets; a value turns red or green once it's clearly worse or better than that over 10+ rolls. **Reset this character** clears that character's log.
+
+Only rolls made while the page is open count, so reloading or reconnecting doesn't count old rolls twice. Other players' rolls are ignored. The expected values assume no specialty and no Willpower.
+
+---
+
 ## 24-Hour Clock & Celsius (toolkit only, off by default)
 
 Switch it on in the toolkit panel to see the room info panel's **Local Time** in 24-hour time (8:10 PM → 20:10, 12:05 AM → 00:05) and its weather temperatures in °C (54°F → 12°C). Each conversion has its own toggle. Only the time and weather box is touched; the chat and room descriptions stay as written.

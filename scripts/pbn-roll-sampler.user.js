@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name         PbN Roll Sampler
 // @namespace    stoia.red
-// @version      1.0.2
+// @version      1.0.3
 // @description  Rolls the /roll dialog's current setup N times as private rolls and compares the results with the exact V20 odds.
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
 // @grant        none
+// @downloadURL  https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-roll-sampler.user.js
+// @updateURL    https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-roll-sampler.user.js
 // ==/UserScript==
 
 (function () {
@@ -310,6 +312,7 @@
     if (running) return;
     running = true;
     stopFlag = false;
+    document.documentElement.dataset.pbnRsRunning = '1'; // the toolkit's Roll Log skips these rolls
     const results = [];
     let note = '';
     try {
@@ -341,6 +344,8 @@
       console.warn('[PbN Roll Sampler]', e);
     } finally {
       running = false;
+      // a result can still be on its way; give the Roll Log time to see it as ours
+      setTimeout(() => { if (!running) delete document.documentElement.dataset.pbnRsRunning; }, 3000);
     }
   }
 
