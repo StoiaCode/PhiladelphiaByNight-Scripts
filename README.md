@@ -133,24 +133,30 @@ malformed, so a typo won't break the bar. **Reset to defaults** reloads the
 built-in list into the editor (click **Save** to apply it). **Cancel**,
 Escape, or clicking outside the panel discards changes.
 
-### Per-character buttons
+### General and per-character buttons
 
-Each character can have **its own button list** or use the **shared list**
-(the one everyone starts with; an existing setup becomes the shared list
-automatically).
+In the toolkit, the bar shows the **general buttons** every character sees,
+then a thin divider and that character's **own buttons**, if it has any. Add
+a button to every character in one place, and give one character extras
+without copying the whole list.
 
-Open the editor while playing a character and the top line reads
-"*Name* uses: ( ) the shared list ( ) its own list":
+Open the editor while playing a character and pick what to edit:
+"Editing: ( ) general buttons ( ) *Name*'s own buttons". The own list can be
+empty (**Clear**, then **Save**). If a character's own button runs the same
+command as a general one, only the general one shows.
 
-- **its own list** — edit buttons only that character sees. The first time,
-  it starts as a copy of the shared list, so you only change what differs.
-- **the shared list** — edit the list every character without its own list
-  uses. Picking this for a character that had its own list and saving
-  deletes that own list (the editor says so before you save).
+Upgrading from the older setup, where a character's own list *replaced* the
+shared one, is automatic: each old own list is checked once, buttons the
+general list already has (same command and mode, whatever the label) are
+dropped, and the rest become that character's own buttons. That character
+now sees the general buttons too.
 
 The bar switches automatically when you play a different character. The
 character is read from the journal sidebar's title; if the editor is opened
-somewhere it can't see one, it simply edits the shared list.
+somewhere it can't see one, it edits the general buttons.
+
+The standalone script keeps the older behaviour: a character uses either the
+shared list or its own.
 
 > Note: settings are stored per browser/device, so if you play on more than one
 > machine you'll configure each once.

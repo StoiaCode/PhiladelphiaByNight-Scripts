@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.9.1
+// @version      1.10.0
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.9.1';
+  const TK_VERSION = '1.10.0';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -517,8 +517,9 @@
   const CMD = {
     BAR_ID: 'pbn-cmd-bar',
     EDITOR_ID: 'pbn-cmd-editor',
-    SHARED_KEY: 'pbn-commands',          // shared list (copied over from the standalone script)
-    BY_CHAR_KEY: 'pbn-commands-by-char', // { [character]: list }
+    SHARED_KEY: 'pbn-commands',          // general list, every character (copied over from the standalone script)
+    BY_CHAR_KEY: 'pbn-commands-by-char', // old: { [character]: list that replaced the general one }; read once to migrate
+    EXTRA_KEY: 'pbn-commands-extra',     // { [character]: buttons shown after the general ones }
     DEFAULTS: [
       { label: 'LOOC', cmd: '/looc' }, { label: 'Say', cmd: '/say' }, { label: 'Emote', cmd: '/emote' },
       { label: 'Craft', cmd: '/craft', submit: true }, { label: 'Look', cmd: '/look', expand: true },
@@ -533,7 +534,7 @@
   defineModule({
     id: 'command-buttons',
     name: 'Command Buttons',
-    description: 'Quick-command buttons above the command box. Each character can have its own set.',
+    description: 'Quick-command buttons above the command box: general ones every character sees, plus each character’s own.',
     settings: [
       { key: 'swap', label: 'Switching commands replaces the previous one (/say hi → /emote hi)', type: 'toggle', default: true },
     ],
@@ -542,7 +543,7 @@
       const SWAP = opt('command-buttons', 'swap', true);
 
       function validate(arr) {
-        if (!Array.isArray(arr) || arr.length === 0) return false;
+        if (!Array.isArray(arr)) return false;
         return arr.every(x => x && typeof x === 'object' &&
           typeof x.label === 'string' && x.label.trim() !== '' &&
           typeof x.cmd === 'string' && x.cmd.trim() !== '' &&
@@ -556,12 +557,30 @@
         return defaultsCopy();
       }
       const saveShared = arr => localStorage.setItem(CMD.SHARED_KEY, JSON.stringify(arr));
-      function loadByChar() {
-        try { return JSON.parse(localStorage.getItem(CMD.BY_CHAR_KEY) || '{}') || {}; } catch (e) { return {}; }
+      const readMap = key => { try { return JSON.parse(localStorage.getItem(key) || '{}') || {}; } catch (e) { return {}; } };
+      // Same button if it runs the same command the same way; the label doesn't matter.
+      const sameKey = x => JSON.stringify([x.cmd.trim(), !!x.submit, !!x.expand, x.then?.trim() || '']);
+
+      // Old per-character lists replaced the general list. Now they add to
+      // it: on first use, each one keeps only the buttons the general list
+      // doesn't already have. Waits until there's an old list to read (the
+      // standalone script may copy it over after the toolkit starts).
+      function loadExtras() {
+        if (localStorage.getItem(CMD.EXTRA_KEY) !== null) return readMap(CMD.EXTRA_KEY);
+        const old = readMap(CMD.BY_CHAR_KEY);
+        if (!Object.keys(old).length) return {};
+        const general = new Set(loadShared().map(sameKey));
+        const extras = {};
+        for (const [name, list] of Object.entries(old)) {
+          if (!validate(list)) continue;
+          const rest = list.filter(x => !general.has(sameKey(x)));
+          if (rest.length) extras[name] = rest;
+        }
+        saveExtras(extras);
+        return extras;
       }
-      const saveByChar = map => localStorage.setItem(CMD.BY_CHAR_KEY, JSON.stringify(map));
-      function ownList(name) { const own = name ? loadByChar()[name] : null; return validate(own) ? own : null; }
-      const commandsFor = name => ownList(name) || loadShared();
+      const saveExtras = map => localStorage.setItem(CMD.EXTRA_KEY, JSON.stringify(map));
+      function extrasFor(name) { const own = name ? loadExtras()[name] : null; return validate(own) ? own : []; }
 
       let commands = loadShared();
       let knownCmds = commands.map(x => x.cmd);
@@ -580,6 +599,7 @@
         .pbn-cmd-btn--primary { color: #f3e6cf; background: #9e2b2b; border-color: #9e2b2b; }
         .pbn-cmd-btn--primary:hover { color: #fff; background: #b33434; }
         .pbn-cmd-btn--pending { color: #f3e6cf; border-color: #e0b84a; }
+        .pbn-cmd-sep { flex: 0 0 auto; align-self: stretch; width: 1px; margin: 3px 4px; background: #9e2b2b80; }
         .pbn-cmd-expand { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; }
         .pbn-cmd-field {
           width: 200px; padding: 4px 8px; background: #0d0707; border: 1px solid #9e2b2b80; border-radius: 5px;
@@ -699,16 +719,20 @@
         const input = c.findCommandInput();
         if (!input) return;
         const name = c.getCharName();
-        const sig = `${name}|${localStorage.getItem(CMD.SHARED_KEY) || ''}|${localStorage.getItem(CMD.BY_CHAR_KEY) || ''}`;
+        const sig = [name, CMD.SHARED_KEY, CMD.BY_CHAR_KEY, CMD.EXTRA_KEY].map(k => k === name ? k : localStorage.getItem(k) || '').join('|');
         const existing = document.getElementById(CMD.BAR_ID);
         if (existing && existing.isConnected && sig === barSig) return;
         existing?.remove();
         barSig = sig;
-        commands = commandsFor(name);
+        const general = loadShared();
+        const generalKeys = new Set(general.map(sameKey));
+        const own = extrasFor(name).filter(x => !generalKeys.has(sameKey(x)));
+        commands = [...general, ...own];
         knownCmds = commands.map(x => x.cmd);
         const bar = c.el('div', { id: CMD.BAR_ID });
         cancelPending(); // its button is about to go; a queued follow-up is dropped with it
-        for (const { label, cmd, submit, expand, then } of commands) {
+        commands.forEach(({ label, cmd, submit, expand, then }, i) => {
+          if (i === general.length && i > 0) bar.append(c.el('span', { className: 'pbn-cmd-sep', title: `${name}'s own buttons` }));
           if (expand) bar.append(makeExpandButton(input, label, cmd, then));
           else {
             const b = makeButton(label, cmd, then);
@@ -719,21 +743,20 @@
             });
             bar.append(b);
           }
-        }
+        });
         const anchor = input.closest('.q-field') || input.parentElement || input;
         anchor.parentElement.insertBefore(bar, anchor);
       }
       const rerender = () => { document.getElementById(CMD.BAR_ID)?.remove(); mount(); };
 
-      // Editor: edits the list the current character uses (own or shared).
+      // Editor: the general list or the current character's own buttons.
       CMD.openEditor = function openEditor() {
         if (document.getElementById(CMD.EDITOR_ID)) return;
         const name = c.getCharName();
-        const hadOwn = !!ownList(name);
-        let scope = hadOwn ? 'own' : 'shared';
+        let scope = 'shared';
         const drafts = {
           shared: JSON.stringify(loadShared(), null, 2),
-          own: JSON.stringify(ownList(name) || loadShared(), null, 2),
+          own: JSON.stringify(extrasFor(name), null, 2),
         };
 
         const overlay = c.el('div', { id: CMD.EDITOR_ID });
@@ -742,23 +765,21 @@
         const note = c.el('div', { className: 'pbn-cmd-editor__note' });
         const ta = c.el('textarea', { className: 'pbn-cmd-editor__json', spellcheck: false, value: drafts[scope] });
         const renderNote = () => {
-          if (!name) note.textContent = 'No character detected, so this edits the shared list used by every character. Open it from the play page to give a character its own buttons.';
-          else if (scope === 'shared') note.textContent = hadOwn
-            ? `Saving deletes ${name}'s own list, and ${name} goes back to the shared list. Edits apply to every character using the shared list.`
-            : 'Edits apply to every character using the shared list.';
-          else note.textContent = hadOwn ? `Only ${name} sees these buttons.` : `Starts as a copy of the shared list. Only ${name} will see these buttons.`;
+          if (!name) note.textContent = 'No character detected, so this edits the general buttons every character sees. Open it from the play page to give a character buttons of its own.';
+          else if (scope === 'shared') note.textContent = 'Every character sees these.';
+          else note.textContent = `Only ${name} sees these, after the general ones. Leave the list empty ([]) for none.`;
+          resetBtn.textContent = scope === 'own' ? 'Clear' : 'Reset to defaults';
         };
         panel.append(heading);
         if (name) {
-          const scopeRow = c.el('div', { className: 'pbn-cmd-editor__scope' }, `${name} uses:`);
-          [['shared', 'the shared list'], ['own', 'its own list']].forEach(([value, text]) => {
+          const scopeRow = c.el('div', { className: 'pbn-cmd-editor__scope' }, 'Editing:');
+          [['shared', 'general buttons'], ['own', `${name}'s own buttons`]].forEach(([value, text]) => {
             const radio = c.el('input', { type: 'radio', name: 'pbn-cmd-scope', value, checked: value === scope });
-            radio.addEventListener('change', () => { drafts[scope] = ta.value; scope = value; ta.value = drafts[scope]; renderNote(); });
+            radio.addEventListener('change', () => { drafts[scope] = ta.value; scope = value; ta.value = drafts[scope]; msg.textContent = ''; renderNote(); });
             scopeRow.append(c.el('label', {}, radio, text));
           });
           panel.append(scopeRow);
         }
-        renderNote();
         const help = c.el('div', { className: 'pbn-cmd-editor__help' });
         help.innerHTML = 'One entry per button. Each needs <code>"label"</code> (button text) and <code>"cmd"</code> (what gets pasted). ' +
           'Optional: <code>"submit": true</code> sends immediately, or <code>"expand": true</code> opens an input field first; both leave what you were typing in the box. ' +
@@ -770,21 +791,25 @@
         const row = c.el('div', { className: 'pbn-cmd-editor__row' }, resetBtn, c.el('div', { style: 'flex:1 1 auto' }), cancelBtn, saveBtn);
         panel.append(note, help, ta, msg, row);
         overlay.append(panel);
+        renderNote();
 
         function close() { document.removeEventListener('keydown', onKey, true); overlay.remove(); }
         function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); close(); } }
-        resetBtn.addEventListener('click', () => { ta.value = JSON.stringify(defaultsCopy(), null, 2); msg.style.color = '#6bdb7e'; msg.textContent = 'Defaults loaded — click Save to apply.'; });
+        resetBtn.addEventListener('click', () => {
+          ta.value = scope === 'own' ? '[]' : JSON.stringify(defaultsCopy(), null, 2);
+          msg.style.color = '#6bdb7e'; msg.textContent = (scope === 'own' ? 'Cleared' : 'Defaults loaded') + ' — click Save to apply.';
+        });
         cancelBtn.addEventListener('click', close);
         overlay.addEventListener('mousedown', e => { if (e.target === overlay) close(); });
         saveBtn.addEventListener('click', () => {
           let parsed;
           try { parsed = JSON.parse(ta.value); } catch (e) { showError('Invalid JSON: ' + e.message); return; }
           if (!validate(parsed)) { showError('Each entry needs a non-empty "label" and "cmd". "submit"/"expand" must be true or false if present. "then" must be one command (text), on a button with "submit" or "expand".'); return; }
-          if (name && scope === 'own') { const map = loadByChar(); map[name] = parsed; saveByChar(map); }
-          else {
-            saveShared(parsed);
-            if (name && hadOwn) { const map = loadByChar(); delete map[name]; saveByChar(map); }
-          }
+          if (name && scope === 'own') {
+            const map = loadExtras();
+            if (parsed.length) map[name] = parsed; else delete map[name];
+            saveExtras(map);
+          } else saveShared(parsed);
           rerender();
           close();
         });
