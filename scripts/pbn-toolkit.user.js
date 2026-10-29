@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.10.0
+// @version      1.11.0
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.10.0';
+  const TK_VERSION = '1.11.0';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -3532,6 +3532,339 @@
   });
 
   // ==========================================================================
+  // MODULE: Reminders
+  // ==========================================================================
+
+  let remindersApi = null;
+
+  defineModule({
+    id: 'reminders',
+    name: 'Reminders',
+    description: 'Reminders for things the game won\'t remind you of (feeding a ghoul, ...): in X hours, at a time of day (yours or the game\'s), or every X days since you last did it.',
+    note: 'Open it from the toolkit section of the Settings tab ("Reminders"). Reminders only go off while a PbN page is open; anything that came due while it was closed shows as soon as you open one.',
+    actions: [{ label: 'Open reminders…', run: () => remindersApi?.open() }],
+    start(c) {
+      // [{ id, char, text, kind: 'once'|'daily'|'every', due,
+      //    clock?: 'game'|'mine', min?: minutes into the day (daily, every-at),
+      //    n?, unit?: 'hours'|'days', last? (every) }]
+      const KEY = 'pbn-reminders';
+      const MIN = 60000, HOUR = 60 * MIN, DAY = 24 * HOUR;
+      const load = () => { try { const v = JSON.parse(localStorage.getItem(KEY) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } };
+      const save = list => { localStorage.setItem(KEY, JSON.stringify(list)); refresh(); };
+      const esc = s => String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+      const pad = n => String(n).padStart(2, '0');
+
+      // ---- Game clock. The game skips daytime: 6:00 PM to 6:00 AM runs over
+      // one real day at half speed, starting at 16:00 CET (UTC+1 all year,
+      // no summer time), then snaps back to 6:00 PM.
+      const NIGHT_START_UTC = 15 * 60; // 16:00 CET, in minutes past midnight UTC
+      const DUSK = 18 * 60;            // 6:00 PM
+      const utcMin = ms => Math.floor(ms / MIN) % 1440;
+      const gameMinAt = ms => (DUSK + Math.floor((((utcMin(ms) - NIGHT_START_UTC) % 1440 + 1440) % 1440) / 2)) % 1440;
+      const fmtGame = m => `${(Math.floor(m / 60) + 11) % 12 + 1}:${pad(m % 60)} ${m >= 720 ? 'PM' : 'AM'}`;
+      // Next real moment after `after` that the game clock shows game minute m.
+      function nextGame(m, after) {
+        const at = (NIGHT_START_UTC + 2 * (((m - DUSK) % 1440 + 1440) % 1440)) % 1440;
+        let t = Math.floor(after / DAY) * DAY + at * MIN;
+        while (t <= after) t += DAY;
+        return t;
+      }
+      function nextMine(m, after) {
+        const d = new Date(after);
+        d.setHours(Math.floor(m / 60), m % 60, 0, 0);
+        if (d.getTime() <= after) d.setDate(d.getDate() + 1);
+        return d.getTime();
+      }
+      const nextAt = (r, after) => (r.clock === 'game' ? nextGame(r.min, after) : nextMine(r.min, after));
+      const span = r => r.n * (r.unit === 'hours' ? HOUR : DAY);
+      // "every N days since last done", optionally at a time of day: the
+      // occurrence of that time closest to last + N days.
+      const everyDue = r => (r.min == null ? r.last + span(r) : nextAt(r, r.last + span(r) - DAY / 2));
+
+      // ---- formatting
+      const fmtMine = ms => new Date(ms).toLocaleString([], {
+        weekday: 'short', hour: '2-digit', minute: '2-digit',
+        ...(Math.abs(ms - Date.now()) > 6 * DAY ? { day: 'numeric', month: 'short' } : {}),
+      });
+      function rel(ms) {
+        const d = Math.abs(ms - Date.now());
+        const parts = d >= DAY ? [`${Math.floor(d / DAY)}d`, `${Math.floor(d % DAY / HOUR)}h`]
+          : d >= HOUR ? [`${Math.floor(d / HOUR)}h`, `${Math.floor(d % HOUR / MIN)}m`] : [`${Math.max(1, Math.round(d / MIN))}m`];
+        const s = parts.filter(p => !/^0[hm]$/.test(p)).join(' ');
+        return ms > Date.now() ? `in ${s}` : `${s} ago`;
+      }
+      const clockText = r => (r.clock === 'game' ? `${fmtGame(r.min)} game time` : `${pad(Math.floor(r.min / 60))}:${pad(r.min % 60)} your time`);
+      function schedule(r) {
+        if (r.kind === 'once') return r.min != null ? `once, at ${clockText(r)}` : 'once';
+        if (r.kind === 'daily') return `every day at ${clockText(r)}`;
+        const unit = r.n === 1 ? r.unit.slice(0, -1) : r.unit;
+        return `every ${r.n} ${unit} since last done${r.min != null ? `, at ${clockText(r)}` : ''} · last done ${rel(r.last)}`;
+      }
+      // When it's due, in both clocks.
+      const dueText = r => `${fmtMine(r.due)} your time · ${fmtGame(gameMinAt(r.due))} game · ${rel(r.due)}`;
+
+      // ---- acting on one
+      function done(id) {
+        const now = Date.now();
+        const list = load().flatMap(r => {
+          if (r.id !== id) return [r];
+          if (r.kind === 'once') return [];
+          if (r.kind === 'daily') return [{ ...r, due: nextAt(r, now) }];
+          const n = { ...r, last: now };
+          return [{ ...n, due: everyDue(n) }];
+        });
+        save(list);
+      }
+      const snooze = id => save(load().map(r => (r.id === id ? { ...r, due: Date.now() + HOUR } : r)));
+      const remove = id => save(load().filter(r => r.id !== id));
+
+      c.addStyle(`
+        #pbn-rm-banners {
+          position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 2147483300;
+          display: flex; flex-direction: column; gap: 8px; width: min(560px, 94vw);
+          font: 16px/1.4 system-ui, 'Segoe UI', sans-serif;
+        }
+        .pbn-rm-banner {
+          display: flex; align-items: center; gap: 12px; padding: 12px 14px; box-sizing: border-box;
+          background: #1c0d0d; color: #f3e6cf; border: 1px solid #e0b84a; border-radius: 6px; box-shadow: 0 8px 28px #000c;
+        }
+        .pbn-rm-banner__text { flex: 1; min-width: 0; }
+        .pbn-rm-banner__what { font-size: 1.1rem; overflow-wrap: anywhere; }
+        .pbn-rm-banner__who { color: #e0b84a; }
+        .pbn-rm-banner__when { color: #9a8a7a; font-size: .9rem; margin-top: 2px; }
+        .pbn-rm-btn { padding: 5px 12px; border-radius: 4px; border: 1px solid #9e2b2b80; background: #120a0a; color: #c4b49a; font: inherit; font-size: .95rem; cursor: pointer; white-space: nowrap; }
+        .pbn-rm-btn:hover { color: #e8ddd0; background: #5a121233; }
+        .pbn-rm-btn--primary { color: #f3e6cf; background: #9e2b2b; border-color: #9e2b2b; }
+        .pbn-rm-btn--primary:hover { background: #b33434; }
+        #pbn-rm-panel {
+          position: fixed; inset: 0; z-index: 2147483400; display: flex; align-items: center; justify-content: center;
+          background: rgba(0,0,0,.6); font: 16px/1.45 system-ui, 'Segoe UI', sans-serif; color: #e8ddd0;
+        }
+        .pbn-rm__box {
+          width: min(760px, 96vw); max-height: 90vh; display: flex; flex-direction: column; box-sizing: border-box;
+          background: #120a0a; border: 1px solid #5a1212; border-radius: 6px; box-shadow: 0 8px 40px #000a;
+        }
+        .pbn-rm__head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; padding: 16px 20px 6px; }
+        .pbn-rm__title { font-family: TMUnicorn, Georgia, serif; font-size: 1.5rem; color: #f3e6cf; }
+        .pbn-rm__now { color: #9a8a7a; font-size: .95rem; }
+        .pbn-rm__x { margin-left: auto; background: none; border: 0; color: #9a8a7a; font-size: 1.4rem; cursor: pointer; }
+        .pbn-rm__x:hover { color: #e8ddd0; }
+        .pbn-rm__body { overflow: auto; padding: 4px 20px 12px; }
+        .pbn-rm__char { margin: 14px 0 4px; color: #e0b84a; font-size: .85rem; text-transform: uppercase; letter-spacing: .8px; }
+        .pbn-rm__row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #5a121244; }
+        .pbn-rm__row > div { flex: 1; min-width: 0; }
+        .pbn-rm__what { font-size: 1.05rem; color: #f3e6cf; overflow-wrap: anywhere; }
+        .pbn-rm__sched, .pbn-rm__due { color: #9a8a7a; font-size: .9rem; }
+        .pbn-rm__due--late { color: #f0906a; }
+        .pbn-rm__empty { padding: 14px 0; color: #9a8a7a; font-style: italic; }
+        .pbn-rm__form { border-top: 1px solid #5a1212; padding: 12px 20px 16px; display: flex; flex-direction: column; gap: 10px; }
+        .pbn-rm__form h3 { margin: 0; font: inherit; font-size: .85rem; color: #9a8a7a; text-transform: uppercase; letter-spacing: .8px; }
+        .pbn-rm__line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+        .pbn-rm__line[hidden] { display: none; }
+        .pbn-rm__form input, .pbn-rm__form select {
+          padding: 5px 8px; background: #0d0707; color: #e8dcc0; border: 1px solid #5a1212; border-radius: 4px; font: inherit; font-size: .95rem;
+          color-scheme: dark;
+        }
+        .pbn-rm__form input:focus, .pbn-rm__form select:focus { outline: none; border-color: #9e2b2b; }
+        .pbn-rm__form input[type=number] { width: 5em; }
+        .pbn-rm__form :disabled { opacity: .45; }
+        .pbn-rm__text { flex: 1; min-width: 200px; }
+        .pbn-rm__preview { color: #9a8a7a; font-size: .9rem; min-height: 1.3em; }
+        .pbn-rm__preview--bad { color: #f0906a; }
+      `);
+
+      // ---- banners for what's due
+      let bannerBox = null;
+      function renderBanners() {
+        const now = Date.now();
+        const due = load().filter(r => r.due <= now).sort((a, b) => a.due - b.due);
+        if (!due.length) { bannerBox?.remove(); bannerBox = null; return; }
+        if (!bannerBox || !bannerBox.isConnected) { bannerBox = c.el('div', { id: 'pbn-rm-banners' }); document.body.append(bannerBox); }
+        bannerBox.replaceChildren(...due.map(r => {
+          const b = c.el('div', { className: 'pbn-rm-banner', role: 'alert' });
+          b.innerHTML = `<span aria-hidden="true">⏰</span><div class="pbn-rm-banner__text">
+            <div class="pbn-rm-banner__what">${r.char ? `<span class="pbn-rm-banner__who">${esc(r.char)}</span> — ` : ''}${esc(r.text)}</div>
+            <div class="pbn-rm-banner__when">due ${rel(r.due)}${r.kind === 'every' ? ` · last done ${rel(r.last)}` : ''}</div></div>`;
+          const btn = (t, fn, primary) => { const x = c.el('button', { type: 'button', className: 'pbn-rm-btn' + (primary ? ' pbn-rm-btn--primary' : ''), textContent: t }); x.addEventListener('click', fn); return x; };
+          b.append(btn('Snooze 1h', () => snooze(r.id)), btn(r.kind === 'every' ? 'Done now' : 'Done', () => done(r.id), true));
+          return b;
+        }));
+      }
+      // ⏰ in the tab title while something is due, for a background tab.
+      function renderTitle() {
+        const base = document.title.replace(/^⏰\s*/, '');
+        const want = load().some(r => r.due <= Date.now()) ? `⏰ ${base}`.trim() : base;
+        if (document.title !== want) document.title = want;
+      }
+
+      // ---- the window
+      let panel = null;
+      function renderList() {
+        const now = Date.now();
+        const me = c.getCharName();
+        panel.querySelector('.pbn-rm__now').textContent = `Game time now: ${fmtGame(gameMinAt(now))}`;
+        const list = load().sort((a, b) => a.due - b.due);
+        const body = panel.querySelector('.pbn-rm__body');
+        if (!list.length) { body.innerHTML = '<div class="pbn-rm__empty">No reminders yet. Add one below.</div>'; return; }
+        const chars = [...new Set(list.map(r => r.char || ''))].sort((a, b) => (b === me) - (a === me) || a.localeCompare(b));
+        body.replaceChildren(...chars.flatMap(ch => [
+          c.el('div', { className: 'pbn-rm__char', textContent: ch || 'No character' }),
+          ...list.filter(r => (r.char || '') === ch).map(r => {
+            const row = c.el('div', { className: 'pbn-rm__row' });
+            row.innerHTML = `<div><div class="pbn-rm__what">${esc(r.text)}</div>
+              <div class="pbn-rm__sched">${esc(schedule(r))}</div>
+              <div class="pbn-rm__due${r.due <= now ? ' pbn-rm__due--late' : ''}">${r.due <= now ? 'due since' : 'next:'} ${esc(dueText(r))}</div></div>`;
+            const btn = (t, title, fn) => { const x = c.el('button', { type: 'button', className: 'pbn-rm-btn', textContent: t, title }); x.addEventListener('click', fn); return x; };
+            row.append(
+              btn(r.kind === 'every' ? 'Done now' : 'Done', r.kind === 'once' ? 'Done: removes it' : 'Done: counts from now / moves to the next time', () => done(r.id)),
+              btn('Delete', 'Delete this reminder', () => { if (confirm(`Delete "${r.text}"?`)) remove(r.id); }));
+            return row;
+          }),
+        ]));
+      }
+
+      // A time of day in either clock: game time 6:00 PM–6:00 AM in quarter
+      // hours (daytime doesn't exist in the game), or a time in your own zone.
+      function timePicker() {
+        const clock = c.el('select', {}, c.el('option', { value: 'game', textContent: 'game time' }), c.el('option', { value: 'mine', textContent: 'my time' }));
+        const game = c.el('select', {});
+        for (let m = DUSK; m !== 6 * 60 + 15; m = (m + 15) % 1440) game.append(c.el('option', { value: String(m), textContent: fmtGame(m) }));
+        game.value = String(21 * 60);
+        const mine = c.el('input', { type: 'time', value: '20:00' });
+        const sync = () => { game.hidden = clock.value !== 'game'; mine.hidden = clock.value === 'game'; };
+        clock.addEventListener('change', sync); sync();
+        return {
+          els: [game, mine, clock],
+          get() {
+            if (clock.value === 'game') return { clock: 'game', min: Number(game.value) };
+            const m = mine.value.match(/^(\d\d):(\d\d)/);
+            return m ? { clock: 'mine', min: Number(m[1]) * 60 + Number(m[2]) } : null;
+          },
+          onChange(fn) { [clock, game, mine].forEach(x => x.addEventListener('input', fn)); },
+        };
+      }
+
+      function buildForm() {
+        const me = c.getCharName() || '';
+        const form = c.el('form', { className: 'pbn-rm__form' });
+        const chars = [...new Set([me, ...load().map(r => r.char)].filter(Boolean))];
+        const dl = c.el('datalist', { id: 'pbn-rm-chars' }, ...chars.map(n => c.el('option', { value: n })));
+        const who = c.el('input', { type: 'text', value: me, placeholder: 'Character', title: 'Whose reminder this is. It goes off whoever you are playing.' });
+        who.setAttribute('list', 'pbn-rm-chars');
+        who.style.width = '11em';
+        const text = c.el('input', { type: 'text', className: 'pbn-rm__text', placeholder: 'What, e.g. Feed the ghoul', required: true });
+        const kind = c.el('select', {},
+          c.el('option', { value: 'in', textContent: 'Once, in…' }),
+          c.el('option', { value: 'at', textContent: 'At a time of day' }),
+          c.el('option', { value: 'every', textContent: 'Every … since last done' }));
+        const num = (v, min = 1) => c.el('input', { type: 'number', min: String(min), step: 'any', value: String(v) });
+        const unit = (v) => { const s = c.el('select', {}, c.el('option', { value: 'hours', textContent: 'hours' }), c.el('option', { value: 'days', textContent: 'days' })); s.value = v; return s; };
+
+        const inN = num(3), inUnit = unit('hours');
+        const lineIn = c.el('div', { className: 'pbn-rm__line' }, 'In', inN, inUnit);
+
+        const atTime = timePicker();
+        const atRepeat = c.el('select', {}, c.el('option', { value: 'daily', textContent: 'every day' }), c.el('option', { value: 'once', textContent: 'once' }));
+        const lineAt = c.el('div', { className: 'pbn-rm__line' }, 'At', ...atTime.els, atRepeat);
+
+        const evN = num(7), evUnit = unit('days');
+        const evUseTime = c.el('input', { type: 'checkbox' });
+        const evTime = timePicker();
+        const evAgo = num(0, 0), evAgoUnit = unit('days');
+        const lineEvery = c.el('div', { className: 'pbn-rm__line' }, 'Every', evN, evUnit,
+          c.el('label', { className: 'pbn-rm__line' }, evUseTime, 'at'), ...evTime.els);
+        const lineAgo = c.el('div', { className: 'pbn-rm__line' }, 'Last done', evAgo, evAgoUnit, 'ago (0 = just now)');
+
+        const preview = c.el('div', { className: 'pbn-rm__preview' });
+        const add = c.el('button', { type: 'submit', className: 'pbn-rm-btn pbn-rm-btn--primary', textContent: 'Add reminder' });
+
+        // The reminder the form describes right now, or a reason it can't be made.
+        function current() {
+          const now = Date.now();
+          const base = { char: who.value.trim(), text: text.value.trim() };
+          if (kind.value === 'in') {
+            const n = Number(inN.value);
+            if (!(n > 0)) return 'Enter how long from now.';
+            return { ...base, kind: 'once', due: now + n * (inUnit.value === 'hours' ? HOUR : DAY) };
+          }
+          if (kind.value === 'at') {
+            const t = atTime.get();
+            if (!t) return 'Pick a time.';
+            const r = { ...base, ...t, kind: atRepeat.value };
+            return { ...r, due: nextAt(r, now) };
+          }
+          const n = Number(evN.value), ago = Number(evAgo.value);
+          if (!(n > 0)) return 'Enter how often.';
+          if (!(ago >= 0)) return 'Enter when it was last done.';
+          const t = evUseTime.checked ? evTime.get() : null;
+          if (evUseTime.checked && !t) return 'Pick a time.';
+          if (t && evUnit.value === 'hours') return 'A time of day only works with days.';
+          const r = { ...base, kind: 'every', n, unit: evUnit.value, last: now - ago * (evAgoUnit.value === 'hours' ? HOUR : DAY), ...(t || {}) };
+          return { ...r, due: everyDue(r) };
+        }
+        function update() {
+          lineIn.hidden = kind.value !== 'in';
+          lineAt.hidden = kind.value !== 'at';
+          lineEvery.hidden = lineAgo.hidden = kind.value !== 'every';
+          evTime.els.forEach(x => { x.disabled = !evUseTime.checked; });
+          const r = current();
+          preview.classList.toggle('pbn-rm__preview--bad', typeof r === 'string');
+          preview.textContent = typeof r === 'string' ? r : `First due ${dueText(r)}`;
+        }
+        [kind, inN, inUnit, atRepeat, evN, evUnit, evUseTime, evAgo, evAgoUnit].forEach(x => x.addEventListener('input', update));
+        atTime.onChange(update); evTime.onChange(update);
+        form.addEventListener('submit', e => {
+          e.preventDefault();
+          const r = current();
+          if (typeof r === 'string') { preview.textContent = r; return; }
+          if (!r.text) { text.focus(); return; }
+          save([...load(), { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ...r }]);
+          text.value = '';
+          update();
+        });
+        form.append(c.el('h3', { textContent: 'New reminder' }),
+          c.el('div', { className: 'pbn-rm__line' }, who, dl, text),
+          c.el('div', { className: 'pbn-rm__line' }, kind), lineIn, lineAt, lineEvery, lineAgo,
+          c.el('div', { className: 'pbn-rm__line' }, add, preview));
+        update();
+        return { form, update, focus: () => text.focus() };
+      }
+
+      let formApi = null;
+      function open() {
+        if (panel) return;
+        panel = c.el('div', { id: 'pbn-rm-panel' });
+        panel.innerHTML = `<div class="pbn-rm__box" role="dialog" aria-modal="true" aria-label="Reminders">
+          <div class="pbn-rm__head"><span class="pbn-rm__title">Reminders</span><span class="pbn-rm__now"></span><button type="button" class="pbn-rm__x" title="Close (Esc)" aria-label="Close">×</button></div>
+          <div class="pbn-rm__body"></div></div>`;
+        formApi = buildForm();
+        panel.querySelector('.pbn-rm__box').append(formApi.form);
+        const close = () => { document.removeEventListener('keydown', onKey, true); panel.remove(); panel = null; formApi = null; };
+        const onKey = e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } };
+        panel.querySelector('.pbn-rm__x').addEventListener('click', close);
+        panel.addEventListener('mousedown', e => { if (e.target === panel) close(); });
+        document.addEventListener('keydown', onKey, true);
+        document.body.append(panel);
+        renderList();
+        formApi.focus();
+      }
+      remindersApi = { open };
+
+      function refresh() {
+        renderBanners();
+        renderTitle();
+        if (panel) { renderList(); formApi?.update(); }
+      }
+      // Timers are slowed down in background tabs, so this compares against
+      // the clock rather than waiting for one long timeout. Other tabs'
+      // changes arrive through the storage event.
+      window.addEventListener('storage', e => { if (e.key === KEY) refresh(); });
+      setInterval(refresh, 20000);
+      refresh();
+    },
+  });
+
+  // ==========================================================================
   // SHARED MENU STYLE (popovers used by Hide, presets and languages)
   // ==========================================================================
 
@@ -3816,6 +4149,7 @@
       }));
     }
     if (status['roll-log'] === 'on' && rollLogApi) row.append(btn('Roll log', 'Statistics of your rolls for this character', () => rollLogApi.open()));
+    if (status.reminders === 'on' && remindersApi) row.append(btn('Reminders', 'Reminders for any of your characters, in your time or game time', () => remindersApi.open()));
     section.append(divider, row);
     tab.append(section);
   }

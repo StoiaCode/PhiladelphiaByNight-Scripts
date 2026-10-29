@@ -427,6 +427,22 @@ Only rolls made while the page is open count, so reloading or reconnecting doesn
 
 ---
 
+## Reminders (toolkit only)
+
+Reminders for things the game won't remind you of, like feeding a ghoul. Open them with **Reminders** in the toolkit's section of the in-game **Settings** tab (or *Open reminders…* in the toolkit panel).
+
+Each reminder belongs to a character, but goes off **whoever you're playing**, so nothing is missed because you're logged in as someone else. Three kinds:
+
+- **Once, in…** so many hours or days from now.
+- **At a time of day**, once or every day, in **your time** or **game time**. Game time only offers 6:00 PM to 6:00 AM, since the game skips daytime.
+- **Every … since last done**, e.g. every 7 days, optionally at a time of day. **Done now** restarts the count from that moment; when adding one you can say when it was last done ("2 days ago").
+
+The window shows the game time now, and every reminder's next time in both clocks ("Fri 06:00 your time · 1:00 AM game · in 10h").
+
+When one comes due, a banner appears at the top of the page with **Done** (or **Done now**) and **Snooze 1h**, and the tab title gets a ⏰. Reminders only go off while a PbN page is open; anything that came due while it was closed shows up as soon as you open one. They're stored in this browser only.
+
+How game time is worked out: one game night, 6:00 PM to 6:00 AM, runs over one real day at half speed. It starts at 16:00 CET (UTC+1 all year round, no summer time), so 1:00 AM game time is 06:00 CET, shown in your own time zone.
+
 ## 24-Hour Clock & Celsius (toolkit only, off by default)
 
 Switch it on in the toolkit panel to see the room info panel's **Local Time** in 24-hour time (8:10 PM → 20:10, 12:05 AM → 00:05) and its weather temperatures in °C (54°F → 12°C). Each conversion has its own toggle. Only the time and weather box is touched; the chat and room descriptions stay as written.
