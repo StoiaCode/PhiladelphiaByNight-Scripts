@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.9.0
+// @version      1.9.1
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.9.0';
+  const TK_VERSION = '1.9.1';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -165,7 +165,13 @@
     input.focus();
     await sleep(0);
     pressEnter(input);
-    if (restoreDraft && draft) { await sleep(50); setNativeValue(input, draft); }
+    if (restoreDraft && draft) {
+      // Put the draft back once the game has cleared the box after sending
+      // (or after a second if it never does), caret at the end.
+      await waitFor(() => input.value !== cmd, 1000, 20);
+      setNativeValue(input, draft);
+      try { input.setSelectionRange(draft.length, draft.length); } catch (e) { /* ignore */ }
+    }
     return true;
   }
 
@@ -605,23 +611,21 @@
         .pbn-cmd-editor__row { display: flex; gap: 8px; align-items: center; }
       `);
 
+      // Buttons that send (submit, expand) fire their own command and leave
+      // whatever you were typing in the box. Plain buttons paste: they wrap
+      // the typed text (Say, Emote...) and don't send.
       function applyCommand(input, cmd, submit, arg) {
-        let text;
-        if (arg !== undefined) {
-          text = arg.trim();
-        } else {
-          text = input.value;
-          if (SWAP) {
-            for (const k of knownCmds) {
-              if (text === k || text.startsWith(k + ' ')) { text = text.slice(k.length).replace(/^\s+/, ''); break; }
-            }
+        if (submit) { c.sendCommand(arg?.trim() ? `${cmd} ${arg.trim()}` : cmd); return; }
+        let text = input.value;
+        if (SWAP) {
+          for (const k of knownCmds) {
+            if (text === k || text.startsWith(k + ' ')) { text = text.slice(k.length).replace(/^\s+/, ''); break; }
           }
         }
         const next = text ? `${cmd} ${text}` : `${cmd} `;
         c.setNativeValue(input, next);
         input.focus();
         try { input.setSelectionRange(next.length, next.length); } catch (e) { /* ignore */ }
-        if (submit) setTimeout(() => c.pressEnter(input), 0);
       }
 
       function makeButton(label, cmd, then) {
@@ -757,7 +761,7 @@
         renderNote();
         const help = c.el('div', { className: 'pbn-cmd-editor__help' });
         help.innerHTML = 'One entry per button. Each needs <code>"label"</code> (button text) and <code>"cmd"</code> (what gets pasted). ' +
-          'Optional: <code>"submit": true</code> sends immediately, or <code>"expand": true</code> opens an input field first. ' +
+          'Optional: <code>"submit": true</code> sends immediately, or <code>"expand": true</code> opens an input field first; both leave what you were typing in the box. ' +
           'With either, <code>"then": "/another command"</code> sends one more command 3 seconds later (click the button again to cancel it).';
         const msg = c.el('div', { className: 'pbn-cmd-editor__msg' });
         const showError = t => { msg.style.color = '#f0906a'; msg.textContent = t; };

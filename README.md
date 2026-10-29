@@ -108,6 +108,10 @@ Each entry is an object with these fields:
 `submit` and `expand` are mutually exclusive — set at most one. Omit both for a
 plain paste button.
 
+In the toolkit, buttons that send (`submit`, `expand`) send just their own
+command and leave whatever you were typing in the box, so you can check your
+inventory mid-pose. Plain paste buttons (Say, Emote...) still wrap your text.
+
 `then` chains exactly one follow-up; it's a single command, not a list. While it
 waits, the button counts down, and clicking it again cancels the follow-up.
 Anything you typed into the box in the meantime is put back after it's sent.
