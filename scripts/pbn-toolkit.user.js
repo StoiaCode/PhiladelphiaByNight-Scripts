@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.8.2
+// @version      1.9.0
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.8.2';
+  const TK_VERSION = '1.9.0';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -541,7 +541,8 @@
           typeof x.label === 'string' && x.label.trim() !== '' &&
           typeof x.cmd === 'string' && x.cmd.trim() !== '' &&
           (x.submit === undefined || typeof x.submit === 'boolean') &&
-          (x.expand === undefined || typeof x.expand === 'boolean'));
+          (x.expand === undefined || typeof x.expand === 'boolean') &&
+          (x.then === undefined || (typeof x.then === 'string' && x.then.trim() !== '' && (x.submit === true || x.expand === true))));
       }
       const defaultsCopy = () => CMD.DEFAULTS.map(x => Object.assign({}, x));
       function loadShared() {
@@ -572,6 +573,7 @@
         .pbn-cmd-btn:active, .pbn-cmd-btn--open { color: #f3e6cf; background: #9e2b2b; }
         .pbn-cmd-btn--primary { color: #f3e6cf; background: #9e2b2b; border-color: #9e2b2b; }
         .pbn-cmd-btn--primary:hover { color: #fff; background: #b33434; }
+        .pbn-cmd-btn--pending { color: #f3e6cf; border-color: #e0b84a; }
         .pbn-cmd-expand { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; }
         .pbn-cmd-field {
           width: 200px; padding: 4px 8px; background: #0d0707; border: 1px solid #9e2b2b80; border-radius: 5px;
@@ -622,10 +624,37 @@
         if (submit) setTimeout(() => c.pressEnter(input), 0);
       }
 
-      function makeButton(label, cmd) {
-        const b = c.el('button', { type: 'button', className: 'pbn-cmd-btn', textContent: label, title: cmd });
+      function makeButton(label, cmd, then) {
+        const title = then ? `${cmd}, then ${then} ${THEN_DELAY / 1000}s later (click again to cancel)` : cmd;
+        const b = c.el('button', { type: 'button', className: 'pbn-cmd-btn', textContent: label, title });
         b.addEventListener('mousedown', e => e.preventDefault());
         return b;
+      }
+
+      // Optional "then": one follow-up command, sent THEN_DELAY after the
+      // button's own. A single string on purpose, so a button never chains
+      // more than two. The button counts down meanwhile; clicking it again
+      // cancels the follow-up.
+      const THEN_DELAY = 3000;
+      let pending = null;
+      function cancelPending() {
+        if (!pending) return;
+        clearTimeout(pending.timer); clearInterval(pending.tick);
+        pending.btn.classList.remove('pbn-cmd-btn--pending');
+        pending.btn.textContent = pending.label;
+        pending = null;
+      }
+      function queueThen(btn, label, then) {
+        cancelPending();
+        let left = THEN_DELAY / 1000;
+        const show = () => { btn.textContent = `${label} · ${left}`; };
+        btn.classList.add('pbn-cmd-btn--pending');
+        show();
+        pending = {
+          btn, label,
+          tick: setInterval(() => { left--; show(); }, 1000),
+          timer: setTimeout(() => { cancelPending(); c.sendCommand(then); }, THEN_DELAY),
+        };
       }
 
       // One delegated outside-click handler collapses any open expand field.
@@ -634,9 +663,9 @@
         if (openExpand && !openExpand.wrap.contains(e.target)) openExpand.collapse();
       });
 
-      function makeExpandButton(input, label, cmd) {
+      function makeExpandButton(input, label, cmd, then) {
         const wrap = c.el('span', { className: 'pbn-cmd-expand' });
-        const btn = makeButton(label, cmd);
+        const btn = makeButton(label, cmd, then);
         const field = c.el('input', { type: 'text', className: 'pbn-cmd-field', placeholder: `${cmd} …` });
         field.style.display = 'none';
         const self = {
@@ -644,8 +673,12 @@
           collapse() { btn.classList.remove('pbn-cmd-btn--open'); field.style.display = 'none'; field.value = ''; if (openExpand === self) openExpand = null; },
           expand() { if (openExpand) openExpand.collapse(); btn.classList.add('pbn-cmd-btn--open'); field.style.display = ''; field.focus(); openExpand = self; },
         };
-        const send = () => { applyCommand(input, cmd, true, field.value); self.collapse(); };
-        btn.addEventListener('click', () => (openExpand === self ? send() : self.expand()));
+        const send = () => { applyCommand(input, cmd, true, field.value); self.collapse(); if (then) queueThen(btn, label, then); };
+        btn.addEventListener('click', () => {
+          if (pending?.btn === btn) cancelPending();
+          else if (openExpand === self) send();
+          else self.expand();
+        });
         field.addEventListener('keydown', e => {
           if (e.key === 'Enter') { e.preventDefault(); send(); }
           else if (e.key === 'Escape') { e.preventDefault(); self.collapse(); input.focus(); }
@@ -670,11 +703,16 @@
         commands = commandsFor(name);
         knownCmds = commands.map(x => x.cmd);
         const bar = c.el('div', { id: CMD.BAR_ID });
-        for (const { label, cmd, submit, expand } of commands) {
-          if (expand) bar.append(makeExpandButton(input, label, cmd));
+        cancelPending(); // its button is about to go; a queued follow-up is dropped with it
+        for (const { label, cmd, submit, expand, then } of commands) {
+          if (expand) bar.append(makeExpandButton(input, label, cmd, then));
           else {
-            const b = makeButton(label, cmd);
-            b.addEventListener('click', () => applyCommand(input, cmd, submit));
+            const b = makeButton(label, cmd, then);
+            b.addEventListener('click', () => {
+              if (pending?.btn === b) { cancelPending(); return; }
+              applyCommand(input, cmd, submit);
+              if (then) queueThen(b, label, then);
+            });
             bar.append(b);
           }
         }
@@ -719,7 +757,8 @@
         renderNote();
         const help = c.el('div', { className: 'pbn-cmd-editor__help' });
         help.innerHTML = 'One entry per button. Each needs <code>"label"</code> (button text) and <code>"cmd"</code> (what gets pasted). ' +
-          'Optional: <code>"submit": true</code> sends immediately, or <code>"expand": true</code> opens an input field first.';
+          'Optional: <code>"submit": true</code> sends immediately, or <code>"expand": true</code> opens an input field first. ' +
+          'With either, <code>"then": "/another command"</code> sends one more command 3 seconds later (click the button again to cancel it).';
         const msg = c.el('div', { className: 'pbn-cmd-editor__msg' });
         const showError = t => { msg.style.color = '#f0906a'; msg.textContent = t; };
         const btn = (t, primary) => c.el('button', { type: 'button', className: primary ? 'pbn-cmd-btn pbn-cmd-btn--primary' : 'pbn-cmd-btn', textContent: t });
@@ -736,7 +775,7 @@
         saveBtn.addEventListener('click', () => {
           let parsed;
           try { parsed = JSON.parse(ta.value); } catch (e) { showError('Invalid JSON: ' + e.message); return; }
-          if (!validate(parsed)) { showError('Each entry needs a non-empty "label" and "cmd". "submit"/"expand" must be true or false if present.'); return; }
+          if (!validate(parsed)) { showError('Each entry needs a non-empty "label" and "cmd". "submit"/"expand" must be true or false if present. "then" must be one command (text), on a button with "submit" or "expand".'); return; }
           if (name && scope === 'own') { const map = loadByChar(); map[name] = parsed; saveByChar(map); }
           else {
             saveShared(parsed);

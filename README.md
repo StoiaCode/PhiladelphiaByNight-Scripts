@@ -103,9 +103,14 @@ Each entry is an object with these fields:
 | `cmd` | yes | The command pasted/sent (e.g. `/say`). |
 | `submit` | no | `true` = send immediately on click. |
 | `expand` | no | `true` = open an input field for an argument first. |
+| `then` | no | One more command, sent 3 seconds after the first (needs `submit` or `expand`). |
 
 `submit` and `expand` are mutually exclusive — set at most one. Omit both for a
 plain paste button.
+
+`then` chains exactly one follow-up; it's a single command, not a list. While it
+waits, the button counts down, and clicking it again cancels the follow-up.
+Anything you typed into the box in the meantime is put back after it's sent.
 
 Example:
 
@@ -114,7 +119,8 @@ Example:
   { "label": "LOOC",  "cmd": "/looc" },
   { "label": "Say",   "cmd": "/say" },
   { "label": "Hide",  "cmd": "/hide", "submit": true },
-  { "label": "Look",  "cmd": "/look", "expand": true }
+  { "label": "Look",  "cmd": "/look", "expand": true },
+  { "label": "Vanish", "cmd": "/obfuscate mask", "submit": true, "then": "/obfuscate vanish" }
 ]
 ```
 

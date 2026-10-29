@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Command Buttons
 // @namespace    stoia.red
-// @version      1.4.2
+// @version      1.5.0
 // @description  Adds quick-command buttons (/looc /say /emote /look ...) above the MUSH input box. Buttons are editable in-page via the userscript menu (no script editing needed).
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -60,6 +60,9 @@
   //   submit: true  -> paste + Enter immediately (fire-and-forget, no arg)
   //   expand: true  -> 1st click opens an inline field, 2nd click sends
   //                    cmd + typed text. Fast double-click sends bare cmd.
+  //   then: '/cmd'  -> with submit or expand: one more command, sent
+  //                    THEN_DELAY ms later. One string, never a list, so a
+  //                    button chains two commands at most.
   const DEFAULT_COMMANDS = [
     { label: 'LOOC',     cmd: '/looc'     },
     { label: 'Say',      cmd: '/say'      },
@@ -101,7 +104,9 @@
       typeof c.label === 'string' && c.label.trim() !== '' &&
       typeof c.cmd === 'string' && c.cmd.trim() !== '' &&
       (c.submit === undefined || typeof c.submit === 'boolean') &&
-      (c.expand === undefined || typeof c.expand === 'boolean'));
+      (c.expand === undefined || typeof c.expand === 'boolean') &&
+      (c.then === undefined || (typeof c.then === 'string' && c.then.trim() !== '' &&
+        (c.submit === true || c.expand === true))));
   }
 
   function defaultsCopy() {
@@ -272,6 +277,7 @@
     .pbn-cmd-btn--open { color: #f3e6cf; background: #9e2b2b; }
     .pbn-cmd-btn--primary { color: #f3e6cf; background: #9e2b2b; border-color: #9e2b2b; }
     .pbn-cmd-btn--primary:hover { color: #fff; background: #b33434; }
+    .pbn-cmd-btn--pending { color: #f3e6cf; border-color: #e0b84a; }
     .pbn-cmd-expand { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; }
     .pbn-cmd-field {
       width: 200px; padding: 4px 8px;
@@ -318,31 +324,73 @@
   `;
   document.head.appendChild(style);
 
-  function makeButton(label, cmd) {
+  function makeButton(label, cmd, then) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'pbn-cmd-btn';
     btn.textContent = label;
-    btn.title = cmd;
+    btn.title = then ? `${cmd}, then ${then} ${THEN_DELAY / 1000}s later (click again to cancel)` : cmd;
     // mousedown + preventDefault keeps focus off the button.
     btn.addEventListener('mousedown', (e) => e.preventDefault());
     return btn;
   }
 
+  // Follow-up ("then") command: sent THEN_DELAY after the button's own,
+  // while the button counts down. Clicking it again cancels. Whatever was
+  // typed into the box in the meantime is put back after it's sent.
+  const THEN_DELAY = 3000;
+  let pending = null;
+
+  function cancelPending() {
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    clearInterval(pending.tick);
+    pending.btn.classList.remove('pbn-cmd-btn--pending');
+    pending.btn.textContent = pending.label;
+    pending = null;
+  }
+
+  function queueThen(input, btn, label, then) {
+    cancelPending();
+    let left = THEN_DELAY / 1000;
+    const show = () => { btn.textContent = `${label} · ${left}`; };
+    btn.classList.add('pbn-cmd-btn--pending');
+    show();
+    pending = {
+      btn, label,
+      tick: setInterval(() => { left--; show(); }, 1000),
+      timer: setTimeout(() => {
+        cancelPending();
+        const box = input.isConnected ? input : findInput();
+        if (!box) return;
+        const draft = box.value;
+        setNativeValue(box, then);
+        setTimeout(() => {
+          pressEnter(box);
+          if (draft) setTimeout(() => setNativeValue(box, draft), 50);
+        }, 0);
+      }, THEN_DELAY),
+    };
+  }
+
   // Plain button: paste (and optionally submit) on click.
-  function makePlainButton(input, label, cmd, submit) {
-    const btn = makeButton(label, cmd);
-    btn.addEventListener('click', () => applyCommand(input, cmd, submit));
+  function makePlainButton(input, label, cmd, submit, then) {
+    const btn = makeButton(label, cmd, then);
+    btn.addEventListener('click', () => {
+      if (pending && pending.btn === btn) { cancelPending(); return; }
+      applyCommand(input, cmd, submit);
+      if (then) queueThen(input, btn, label, then);
+    });
     return btn;
   }
 
   // Expand button: click 1 opens an inline field to the right (button stays
   // put, so a fast double-click lands on it twice); click 2 sends cmd + text.
-  function makeExpandButton(input, label, cmd) {
+  function makeExpandButton(input, label, cmd, then) {
     const wrap = document.createElement('span');
     wrap.className = 'pbn-cmd-expand';
 
-    const btn = makeButton(label, cmd);
+    const btn = makeButton(label, cmd, then);
 
     const field = document.createElement('input');
     field.type = 'text';
@@ -367,9 +415,14 @@
     function send() {
       applyCommand(input, cmd, true, field.value);
       collapse();
+      if (then) queueThen(input, btn, label, then);
     }
 
-    btn.addEventListener('click', () => (expanded ? send() : expand()));
+    btn.addEventListener('click', () => {
+      if (pending && pending.btn === btn) cancelPending();
+      else if (expanded) send();
+      else expand();
+    });
 
     field.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); send(); }
@@ -390,10 +443,11 @@
     const bar = document.createElement('div');
     bar.id = BAR_ID;
 
-    for (const { label, cmd, submit, expand } of commands) {
+    cancelPending(); // the old bar's button is going away
+    for (const { label, cmd, submit, expand, then } of commands) {
       const el = expand
-        ? makeExpandButton(input, label, cmd)
-        : makePlainButton(input, label, cmd, submit);
+        ? makeExpandButton(input, label, cmd, then)
+        : makePlainButton(input, label, cmd, submit, then);
       bar.appendChild(el);
     }
     return bar;
@@ -524,6 +578,8 @@
       'One entry per button. Each needs <code>"label"</code> (button text) and ' +
       '<code>"cmd"</code> (what gets pasted). Optional: <code>"submit": true</code> ' +
       'sends immediately, or <code>"expand": true</code> opens an input field first. ' +
+      'With either, <code>"then": "/another command"</code> sends one more command ' +
+      '3 seconds later (click the button again to cancel it). ' +
       'Changes are saved permanently in your userscript manager.';
 
     const msg = document.createElement('div');
@@ -556,7 +612,8 @@
       }
       if (!validateCommands(parsed)) {
         showError('Each entry needs a non-empty "label" and "cmd". ' +
-                  '"submit"/"expand" must be true or false if present.');
+                  '"submit"/"expand" must be true or false if present. ' +
+                  '"then" must be one command (text), on a button with "submit" or "expand".');
         return;
       }
       if (name && scope === 'own') {
