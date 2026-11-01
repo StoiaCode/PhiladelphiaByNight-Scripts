@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.11.1
+// @version      1.11.2
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.11.1';
+  const TK_VERSION = '1.11.2';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -2349,11 +2349,11 @@
       // Names seen this session where the game marks them for certain (speakers,
       // "You see:", "You look at"). [SYSTEM] lines don't show where a name
       // ends, so only these, saved people and people with a saved look match there.
-      const seenNames = new Set();
+      const seenNames = new Map(); // look key -> text as shown
       let rescanQueued = false;
       function knownKeys() {
         const looks = Object.keys(looksFor());
-        return [...new Set([...index.keys(), ...seenNames, ...looks])].sort((a, b) => b.length - a.length);
+        return [...new Set([...index.keys(), ...seenNames.keys(), ...looks])].sort((a, b) => b.length - a.length);
       }
       function process(root) {
         // Speakers: <span class="chat-name-…">Name</span>, "Name Rolls..." on roll
@@ -2377,7 +2377,7 @@
         // Remember them. A new name can match [SYSTEM] lines already on screen,
         // so those get another pass.
         const before = seenNames.size;
-        root.querySelectorAll('[class*="chat-name"] .' + NM + ', p.look-output > .' + NM).forEach(sp => { if (!isSelf(sp.dataset.pbnNmOrig)) seenNames.add(keyOf(sp.dataset.pbnNmOrig)); });
+        root.querySelectorAll('[class*="chat-name"] .' + NM + ', p.look-output > .' + NM).forEach(sp => { if (!isSelf(sp.dataset.pbnNmOrig)) seenNames.set(keyOf(sp.dataset.pbnNmOrig), sp.dataset.pbnNmOrig); });
         if (seenNames.size > before && root.isConnected && !rescanQueued) {
           rescanQueued = true;
           setTimeout(() => { rescanQueued = false; const cont = document.querySelector(CHAT); if (cont) processRow(cont); }, 0);
@@ -2598,6 +2598,15 @@
         menu.append(c.el('div', { className: 'pbn-tk-menu__head', textContent: 'Notes' }), box);
       }
 
+      // People you haven't saved (no name, notes or link) but have looked at,
+      // or seen in the chat this session: they can be picked in "Same person as…" too.
+      function strangers(except) {
+        const out = new Map();
+        const looks = looksFor();
+        for (const [k, v] of Object.entries(looks)) out.set(k, { orig: v.orig || k, looked: true });
+        for (const [k, o] of seenNames) if (!out.has(k)) out.set(k, { orig: o, looked: false });
+        return [...out].filter(([k]) => !index.has(k) && !isSelf(k) && k !== keyOf(except)).map(([, v]) => v);
+      }
       function renderEditor(menu, orig, fromList) {
         const e = personOf(orig);
         const again = () => { renderEditor(menu, orig, fromList); currentPop?.place(); };
@@ -2627,13 +2636,13 @@
         notesSection(menu, orig);
         menu.append(sep());
         if (CARDS && !menu.closest('#pbn-dossier')) menu.append(item('Open their dossier', () => { close(); openDossier(orig); }));
-        const known = Object.values(book).filter(x => x !== e).length;
-        const same = item(e ? 'Same person as… (merge with someone you know)' : 'Same person as… (someone you know)', () => {
+        const known = Object.values(book).filter(x => x !== e).length + strangers(orig).length;
+        const same = item(e ? 'Same person as… (merge with someone else)' : 'Same person as…', () => {
           renderList(menu, { pickFor: orig, back: again });
           currentPop?.place();
         });
         same.disabled = !known;
-        if (!known) same.title = 'You have nobody else saved yet';
+        if (!known) same.title = 'Nobody else saved, looked at or seen yet';
         menu.append(same);
         if (others.length) menu.append(item('Not them: split “' + orig + '” off', () => { detach(orig); again(); }));
         if (e) {
@@ -2660,14 +2669,23 @@
         menu.append(c.el('div', { className: 'pbn-tk-menu__head', textContent: pickFor ? 'Who is this?' : 'People — ' + bookChar }));
         if (pickFor) menu.append(c.el('div', { className: 'pbn-nm-orig', textContent: pickFor }));
         const entries = Object.entries(book).filter(([, x]) => x !== self)
-          .sort(([, a], [, b]) => (a.name || a.looks[0]).localeCompare(b.name || b.looks[0]));
+          .map(([id, x]) => ({ id, x, label: x.name || x.looks[0] }));
+        if (pickFor) entries.push(...strangers(pickFor).map(v => ({ stranger: v, label: v.orig })));
+        entries.sort((a, b) => a.label.localeCompare(b.label));
         if (!entries.length) {
           menu.append(c.el('div', { className: 'pbn-tk-menu__note', textContent: 'Nobody yet. Click a name or short desc in the chat to name that person or take notes on them.' }));
         } else {
           const filter = c.el('input', { type: 'text', className: 'pbn-nm-input pbn-nm-filter', placeholder: 'Find someone (name, desc or notes)…', spellcheck: false });
           filter.setAttribute('aria-label', 'Find someone');
           const list = c.el('div', { className: 'pbn-nm-list' });
-          const rows = entries.map(([id, x]) => {
+          const rows = entries.map(({ id, x, stranger }) => {
+            if (stranger) {
+              const b = c.el('button', { type: 'button', className: 'pbn-tk-menu__item' },
+                c.el('span', { textContent: stranger.orig }, c.el('span', { className: 'pbn-nm-list__mark', textContent: '  ' + (stranger.looked ? 'looked at' : 'seen in the chat') })));
+              b.addEventListener('click', () => { linkPair(pickFor, stranger.orig); back(); });
+              list.append(b);
+              return [b, stranger.orig.toLowerCase()];
+            }
             const marks = [x.notes ? '✎ notes' : '', x.off ? 'showing game text' : ''].filter(Boolean).join(' · ');
             const looks = x.name ? x.looks : x.looks.slice(1);
             const b = c.el('button', { type: 'button', className: 'pbn-tk-menu__item' },
