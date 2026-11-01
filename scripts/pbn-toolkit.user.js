@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.12.0
+// @version      1.13.0
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.12.0';
+  const TK_VERSION = '1.13.0';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -835,19 +835,23 @@
   // MODULE: Chat Log (recording, Save Log, Search, Hide)
   // ==========================================================================
 
+  let censorApi = null;
   defineModule({
     id: 'chat-log',
     name: 'Chat Log',
-    description: 'Save Log records the RP chat for download, plus Search and Hide in the chat tab bar, and a button back to the newest messages when you’ve scrolled up.',
+    description: 'Save Log records the RP chat for download, plus Search and Hide in the chat tab bar, a button back to the newest messages when you’ve scrolled up, and a word filter.',
     settings: [
       { key: 'search', label: 'Search button', type: 'toggle', default: true },
       { key: 'hide', label: 'Hide button', type: 'toggle', default: true },
       { key: 'jump', label: '“Newest messages” button when scrolled up', type: 'toggle', default: true },
+      { key: 'censor', label: 'Censor these words (a****b), comma-separated, * at the end for any ending:', type: 'text', default: '',
+        placeholder: 'e.g. word, other*' },
     ],
     start(c) {
       const WITH_SEARCH = opt('chat-log', 'search', true);
       const WITH_HIDE = opt('chat-log', 'hide', true);
       const WITH_JUMP = opt('chat-log', 'jump', true);
+      const CENSOR = String(opt('chat-log', 'censor', '') || '');
       const CHAT = '.chat-container';
       const ROW = '[role="article"]';
       const BTN_ID = 'pbn-log-btn', SEARCH_ID = 'pbn-log-search', HIDE_ID = 'pbn-log-hide';
@@ -1280,6 +1284,61 @@
       }
       if (WITH_JUMP) window.addEventListener('resize', placeJump);
 
+      // ---- Word filter: listed words show as a****b in the chat and in
+      // dossier looks. Display only: the real word is kept on the span (and
+      // put back for saved looks); Save Log writes the game's text.
+      const CENSOR_RE = (() => {
+        // "word*" also matches any ending (words, wordy…)
+        const words = CENSOR.split(/[,\n]/).map(w => w.trim()).filter(w => w.replace(/\*+$/, ''))
+          .map(w => w.replace(/\*+$/, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + (/\*$/.test(w) ? '[\\p{L}\\p{N}]*' : ''));
+        return words.length ? new RegExp(`(?<![\\p{L}\\p{N}])(?:${words.join('|')})(?![\\p{L}\\p{N}])`, 'giu') : null;
+      })();
+      const mask = w => { const ch = Array.from(w); return ch.length < 3 ? ch[0] + '*'.repeat(ch.length - 1) : ch[0] + '*'.repeat(ch.length - 2) + ch[ch.length - 1]; };
+      function censorIn(root) {
+        if (!CENSOR_RE || !root) return;
+        CENSOR_RE.lastIndex = 0;
+        if (!CENSOR_RE.test(root.textContent)) return;
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        const nodes = [];
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          if (n.parentElement?.closest('.pbn-cf, textarea, input, script, style')) continue;
+          CENSOR_RE.lastIndex = 0;
+          if (CENSOR_RE.test(n.nodeValue)) nodes.push(n);
+        }
+        for (const n of nodes) {
+          const t = n.nodeValue, frag = document.createDocumentFragment();
+          let last = 0;
+          CENSOR_RE.lastIndex = 0; // matchAll starts where the last test() stopped
+          for (const m of t.matchAll(CENSOR_RE)) {
+            const sp = c.el('span', { className: 'pbn-cf', textContent: mask(m[0]) });
+            sp.dataset.pbnCf = m[0];
+            frag.append(t.slice(last, m.index), sp);
+            last = m.index + m[0].length;
+          }
+          frag.append(t.slice(last));
+          n.replaceWith(frag);
+        }
+      }
+      const uncensor = root => root?.querySelectorAll('.pbn-cf').forEach(sp => sp.replaceWith(sp.dataset.pbnCf));
+      censorApi = { apply: censorIn, unwrap: uncensor };
+      let cfObs = null, cfCont = null, cfQueued = new Set(), cfFrame = 0;
+      function ensureCensor() {
+        if (!CENSOR_RE) return;
+        const cont = document.querySelector(CHAT);
+        if (!cont || cont === cfCont) return;
+        cfObs?.disconnect();
+        cfCont = cont;
+        censorIn(cont);
+        // A moment later, so Personal Names has wrapped the row's names first
+        // (a timer, not a frame: frames don't run in background tabs).
+        cfObs = new MutationObserver(ms => {
+          for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1) cfQueued.add(n.closest?.(ROW) || n);
+          if (!cfFrame) cfFrame = setTimeout(() => { cfFrame = 0; cfQueued.forEach(r => r.isConnected && censorIn(r)); cfQueued.clear(); }, 30);
+        });
+        cfObs.observe(cont, { childList: true, subtree: true });
+      }
+      function resetCensor() { cfObs?.disconnect(); cfObs = cfCont = null; cfQueued.clear(); }
+
       // ---- Lifecycle: a 1s tick keeps the hook, buttons and tags current.
       let tick = null, enteredAt = 0;
       function sync() {
@@ -1287,6 +1346,7 @@
         ensureSearch();
         ensureHide();
         ensureJump();
+        ensureCensor();
         if (WITH_HIDE) { tagWhispers(); refreshHideButton(); }
         if (hooked && hooked.inst.isUnmounted) unhook();
         if (!hooked) {
@@ -1303,7 +1363,7 @@
       }
       c.onRoute(c.isPlay, () => { enteredAt = Date.now(); sync(); tick = setInterval(sync, 1000); }, () => {
         clearInterval(tick); tick = null;
-        unhook(); stopDomFallback(); clearHits(); searchState = null; resetHide(); resetJump();
+        unhook(); stopDomFallback(); clearHits(); searchState = null; resetHide(); resetJump(); resetCensor();
       });
     },
   });
@@ -2968,6 +3028,7 @@
       function extractLook(row) {
         const box = document.createElement('div');
         for (const n of row.childNodes) if (!n.classList?.contains('pbn-dos-stub')) box.append(n.cloneNode(true));
+        censorApi?.unwrap(box);
         const p = box.querySelector('p.look-output');
         let sub = '';
         // the "You look at <name> <em>(short desc)</em>" line goes; its short desc is kept
@@ -3284,6 +3345,7 @@
             const box = c.el('div', { className: 'pbn-dos__look' });
             box.append(cleanHtml(look.html));
             linkify(box);
+            censorApi?.apply(box);
             P.look.append(box);
           }
         }
@@ -4015,7 +4077,8 @@
     .pbn-tk-mod__status--error { color: #f0906a; }
     .pbn-tk-mod__opts { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
     .pbn-tk-mod__opt { display: flex; align-items: center; gap: 10px; font-size: .95rem; color: #c4b49a; flex-wrap: wrap; }
-    .pbn-tk-mod__opt select, .pbn-tk-mod__opt input[type=number] {
+    .pbn-tk-mod__opt input[type=text] { flex: 1 1 14em; min-width: 0; }
+    .pbn-tk-mod__opt select, .pbn-tk-mod__opt input[type=number], .pbn-tk-mod__opt input[type=text] {
       background: #0d0707; color: #e8ddd0; border: 1px solid #5a1212; border-radius: 4px; padding: 3px 6px; font: inherit; font-size: .95rem;
     }
     .pbn-tk-mod__opt input[type=number] { width: 5em; }
@@ -4112,6 +4175,9 @@
           if (def.type === 'select') {
             control = el('select', {}, ...def.options.map(([v, t]) => el('option', { value: v, textContent: t, selected: v === cur })));
             control.addEventListener('change', () => setOpt(control.value));
+          } else if (def.type === 'text') {
+            control = el('input', { type: 'text', value: cur, placeholder: def.placeholder || '', spellcheck: false });
+            control.addEventListener('change', () => setOpt(control.value.trim()));
           } else {
             control = el('input', { type: 'number', value: cur, min: def.min ?? '', max: def.max ?? '' });
             control.addEventListener('change', () => {

@@ -241,6 +241,12 @@ It's display-only and deliberately temporary: nothing is saved, a reload or swit
 
 Scroll up in the chat and a **↓ Newest messages** button appears at the bottom of it; click it to jump back down. If messages arrive while you're up there, it turns gold and counts them (**↓ 3 new messages**). It can be switched off under Chat Log in the toolkit panel.
 
+### Word filter (toolkit only)
+
+Words you'd rather not read can be censored: they show with only their first and last letter, the rest starred (`a******b`). List them under Chat Log in the toolkit panel, separated by commas, then reload. Only whole words match, ignoring capitals. End a word with `*` to also catch longer forms: `word*` covers *words* and *wordy* too.
+
+It applies to the chat and to the looks shown in dossiers. It's display only: saved looks keep the real text, so taking a word off the list brings it back, and **Save Log** writes the game's text unchanged.
+
 This script has no configurable options.
 
 ---
