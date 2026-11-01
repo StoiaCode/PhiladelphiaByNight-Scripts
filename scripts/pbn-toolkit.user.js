@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.11.0
+// @version      1.11.1
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.11.0';
+  const TK_VERSION = '1.11.1';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -2165,6 +2165,8 @@
         for (const [id, person] of Object.entries(book)) for (const l of person.looks) index.set(keyOf(l), id);
       }
       const personOf = orig => book[index.get(keyOf(orig))] || null;
+      // "/look me" shows as "You look at yourself.": that dossier is your own.
+      const isSelf = orig => /^yourself.?$/.test(keyOf(orig));
       function loadBook() { bookChar = c.getCharName() || 'default'; book = migrate(loadAll()[bookChar] || {}); reindex(); }
       function write(all, b) {
         // A person is kept if they have a name, notes, or more than one look.
@@ -2375,7 +2377,7 @@
         // Remember them. A new name can match [SYSTEM] lines already on screen,
         // so those get another pass.
         const before = seenNames.size;
-        root.querySelectorAll('[class*="chat-name"] .' + NM + ', p.look-output > .' + NM).forEach(sp => seenNames.add(keyOf(sp.dataset.pbnNmOrig)));
+        root.querySelectorAll('[class*="chat-name"] .' + NM + ', p.look-output > .' + NM).forEach(sp => { if (!isSelf(sp.dataset.pbnNmOrig)) seenNames.add(keyOf(sp.dataset.pbnNmOrig)); });
         if (seenNames.size > before && root.isConnected && !rescanQueued) {
           rescanQueued = true;
           setTimeout(() => { rescanQueued = false; const cont = document.querySelector(CHAT); if (cont) processRow(cont); }, 0);
@@ -2813,13 +2815,14 @@
       function suggestFor(lookKey) {
         const { lines, common } = allLines();
         const store = looksFor();
+        if (isSelf(lookKey)) return null;
         const mine = [...(lines.get(lookKey) || [])].filter(l => !common.has(l));
         if (mine.length < MIN_SHARED) return null;
         const self = index.get(lookKey);
         const nope = new Set(store[lookKey]?.nope || []);
         let best = null;
         for (const [k, set] of lines) {
-          if (k === lookKey || nope.has(k) || (store[k]?.nope || []).includes(lookKey)) continue;
+          if (k === lookKey || isSelf(k) || nope.has(k) || (store[k]?.nope || []).includes(lookKey)) continue;
           if (self && index.get(k) === self) continue;
           const theirs = [...set].filter(l => !common.has(l)).length;
           if (theirs < MIN_SHARED) continue;
@@ -2857,6 +2860,7 @@
       }
       // How a person is headed: your name for them, else the game's name, else the text.
       function displayOf(orig) {
+        if (isSelf(orig)) return bookChar === 'default' ? 'Yourself' : bookChar;
         return personOf(orig)?.name || namedLook(orig)?.as || orig;
       }
 
@@ -3149,7 +3153,8 @@
         const edit = c.el('button', { type: 'button', className: 'pbn-dos__btn', textContent: person?.name ? 'Rename · link…' : 'Name · link…',
           title: 'Your name for them, "Same person as…", their other appearances' });
         edit.addEventListener('click', () => openEditor(edit, orig));
-        const target = targetFor(orig);
+        const self = isSelf(orig);
+        const target = self ? 'me' : targetFor(orig);
         const lookBtn = c.el('button', { type: 'button', className: 'pbn-dos__btn', textContent: 'Look', title: 'Send /look ' + target + ' now' });
         lookBtn.addEventListener('click', () => c.sendCommand('/look ' + target));
         const whisperBtn = c.el('button', { type: 'button', className: 'pbn-dos__btn', textContent: 'Whisper', title: 'Start /whisper ' + target + ' … in the command box' });
@@ -3157,12 +3162,13 @@
         // The short desc is shown on its own line, so it isn't listed again.
         const display = displayOf(orig);
         const shortDesc = namedLook(orig)?.sub || '';
-        const aliases = looks.filter(l => keyOf(l) !== keyOf(display) && keyOf(l) !== keyOf(shortDesc));
+        const aliases = self ? ['yourself'] : looks.filter(l => keyOf(l) !== keyOf(display) && keyOf(l) !== keyOf(shortDesc));
         P.who.textContent = '';
         P.who.append(...[
           c.el('div', { className: 'pbn-dos__top' }, c.el('div', { className: 'pbn-dos__name', textContent: display }),
-            c.el('div', { className: 'pbn-dos__actions' }, lookBtn, whisperBtn, edit)),
-          aliases.length ? c.el('div', { className: 'pbn-dos__alias', textContent: (person?.name ? 'Seen as: ' : 'Also seen as: ') + aliases.join(' · ') }) : null,
+            c.el('div', { className: 'pbn-dos__actions' }, lookBtn, whisperBtn, self ? null : edit)),
+          self ? c.el('div', { className: 'pbn-dos__alias', textContent: 'yourself' })
+            : aliases.length ? c.el('div', { className: 'pbn-dos__alias', textContent: (person?.name ? 'Seen as: ' : 'Also seen as: ') + aliases.join(' · ') }) : null,
           shortDesc ? c.el('div', { className: 'pbn-dos__alias', textContent: shortDesc }) : null,
         ].filter(Boolean));
         const sug = look && suggestFor(keyOf(look.as));
@@ -3186,10 +3192,10 @@
         if (P.html !== stamp) {
           P.html = stamp;
           P.look.textContent = '';
-          P.look.append(c.el('div', { className: 'pbn-tk-menu__head pbn-dos__lookhead' }, 'Their look',
+          P.look.append(c.el('div', { className: 'pbn-tk-menu__head pbn-dos__lookhead' }, self ? 'Your look' : 'Their look',
             look ? c.el('span', { className: 'pbn-dos__when', textContent: 'seen ' + when(look.at) + (looks.length > 1 ? ' · as ' + look.as : '') }) : null));
           if (!look) {
-            P.look.append(c.el('div', { className: 'pbn-dos__empty', textContent: 'No look saved yet. /look at them and it lands here, replacing the last one.' }));
+            P.look.append(c.el('div', { className: 'pbn-dos__empty', textContent: self ? 'No look saved yet. /look me and it lands here, replacing the last one.' : 'No look saved yet. /look at them and it lands here, replacing the last one.' }));
           } else {
             const box = c.el('div', { className: 'pbn-dos__look' });
             box.append(cleanHtml(look.html));
