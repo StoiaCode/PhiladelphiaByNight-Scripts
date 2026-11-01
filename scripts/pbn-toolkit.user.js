@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.11.2
+// @version      1.12.0
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.11.2';
+  const TK_VERSION = '1.12.0';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -838,14 +838,16 @@
   defineModule({
     id: 'chat-log',
     name: 'Chat Log',
-    description: 'Save Log records the RP chat for download, plus Search and Hide in the chat tab bar.',
+    description: 'Save Log records the RP chat for download, plus Search and Hide in the chat tab bar, and a button back to the newest messages when you’ve scrolled up.',
     settings: [
       { key: 'search', label: 'Search button', type: 'toggle', default: true },
       { key: 'hide', label: 'Hide button', type: 'toggle', default: true },
+      { key: 'jump', label: '“Newest messages” button when scrolled up', type: 'toggle', default: true },
     ],
     start(c) {
       const WITH_SEARCH = opt('chat-log', 'search', true);
       const WITH_HIDE = opt('chat-log', 'hide', true);
+      const WITH_JUMP = opt('chat-log', 'jump', true);
       const CHAT = '.chat-container';
       const ROW = '[role="article"]';
       const BTN_ID = 'pbn-log-btn', SEARCH_ID = 'pbn-log-search', HIDE_ID = 'pbn-log-hide';
@@ -1000,6 +1002,15 @@
         .pbn-ls-count { min-width: 4.5em; padding: 0 4px; text-align: center; white-space: nowrap; font-family: Georgia, 'Times New Roman', serif; font-size: .9rem; color: #9a8a7a; }
         ::highlight(pbn-log-search) { background-color: #e0b84a40; }
         ::highlight(pbn-log-search-current) { background-color: #e0b84a; color: #120a0a; }
+        #pbn-jump {
+          position: fixed; z-index: 1500; transform: translateX(-50%); cursor: pointer;
+          padding: 7px 18px; background: #120a0aee; color: #e8ddd0; border: 1px solid #9a2020; border-radius: 999px;
+          box-shadow: 0 4px 16px #000a; font-family: Georgia, 'Times New Roman', serif; font-size: 1.05rem; white-space: nowrap;
+        }
+        #pbn-jump[hidden] { display: none; }
+        #pbn-jump:hover { background: #3a0e0eee; }
+        #pbn-jump:focus-visible { outline: 2px solid #e8ddd0; outline-offset: 2px; }
+        #pbn-jump.pbn-jump--new { border-color: #e0b84a; color: #f0d890; }
         .chat-container .pbn-log-hit { outline: 1px solid #e0b84a99; outline-offset: -1px; background: #e0b84a14; border-radius: 3px; }
       `);
 
@@ -1215,12 +1226,67 @@
         HIDE_CATS.forEach(([k]) => document.body.classList.remove(`pbn-hide-cat-${k}`));
       }
 
+      // ---- "Newest messages": shown over the bottom of the chat while it's
+      // scrolled up, with a count of messages that arrived since.
+      let jumpBtn = null, jumpCont = null, jumpObs = null, unseen = 0;
+      const AT_BOTTOM = 60; // px from the bottom that still counts as "at the bottom"
+      const scrolledUp = cont => cont.scrollHeight - cont.scrollTop - cont.clientHeight > AT_BOTTOM;
+      function placeJump() {
+        if (!jumpBtn || !jumpCont) return;
+        const up = jumpCont.isConnected && scrolledUp(jumpCont);
+        if (!up) unseen = 0;
+        jumpBtn.hidden = !up;
+        if (!up) return;
+        const r = jumpCont.getBoundingClientRect();
+        jumpBtn.style.left = (r.left + r.width / 2) + 'px';
+        jumpBtn.style.top = (r.bottom - jumpBtn.offsetHeight - 14) + 'px';
+        const text = unseen ? `↓ ${unseen} new message${unseen === 1 ? '' : 's'}` : '↓ Newest messages';
+        if (jumpBtn.textContent !== text) jumpBtn.textContent = text;
+        jumpBtn.classList.toggle('pbn-jump--new', unseen > 0);
+      }
+      function ensureJump() {
+        if (!WITH_JUMP) return;
+        if (!jumpBtn) {
+          jumpBtn = c.el('button', { type: 'button', id: 'pbn-jump', hidden: true, title: 'Scroll down to the newest messages' });
+          jumpBtn.addEventListener('mousedown', e => e.preventDefault());
+          jumpBtn.addEventListener('click', () => {
+            if (!jumpCont) return;
+            const far = jumpCont.scrollHeight - jumpCont.scrollTop - jumpCont.clientHeight > jumpCont.clientHeight * 3;
+            jumpCont.scrollTo({ top: jumpCont.scrollHeight, behavior: far ? 'auto' : 'smooth' });
+          });
+          document.body.append(jumpBtn);
+        }
+        const cont = document.querySelector(CHAT);
+        if (cont && cont !== jumpCont) {
+          jumpCont?.removeEventListener('scroll', placeJump);
+          jumpObs?.disconnect();
+          jumpCont = cont;
+          unseen = 0;
+          cont.addEventListener('scroll', placeJump, { passive: true });
+          jumpObs = new MutationObserver(ms => {
+            if (scrolledUp(cont)) for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1 && n.matches(ROW)) unseen++;
+            placeJump();
+          });
+          jumpObs.observe(cont, { childList: true });
+        }
+        placeJump();
+      }
+      function resetJump() {
+        jumpCont?.removeEventListener('scroll', placeJump);
+        jumpObs?.disconnect();
+        jumpCont = jumpObs = null;
+        jumpBtn?.remove();
+        jumpBtn = null;
+      }
+      if (WITH_JUMP) window.addEventListener('resize', placeJump);
+
       // ---- Lifecycle: a 1s tick keeps the hook, buttons and tags current.
       let tick = null, enteredAt = 0;
       function sync() {
         ensureButton();
         ensureSearch();
         ensureHide();
+        ensureJump();
         if (WITH_HIDE) { tagWhispers(); refreshHideButton(); }
         if (hooked && hooked.inst.isUnmounted) unhook();
         if (!hooked) {
@@ -1237,7 +1303,7 @@
       }
       c.onRoute(c.isPlay, () => { enteredAt = Date.now(); sync(); tick = setInterval(sync, 1000); }, () => {
         clearInterval(tick); tick = null;
-        unhook(); stopDomFallback(); clearHits(); searchState = null; resetHide();
+        unhook(); stopDomFallback(); clearHits(); searchState = null; resetHide(); resetJump();
       });
     },
   });

@@ -237,6 +237,10 @@ Search covers the messages currently in the chat. The game only keeps the last 5
 
 It's display-only and deliberately temporary: nothing is saved, a reload or switching chat tabs brings everything back, and your **Save Log** file still contains every message.
 
+### Newest messages (toolkit only)
+
+Scroll up in the chat and a **↓ Newest messages** button appears at the bottom of it; click it to jump back down. If messages arrive while you're up there, it turns gold and counts them (**↓ 3 new messages**). It can be switched off under Chat Log in the toolkit panel.
+
 This script has no configurable options.
 
 ---
