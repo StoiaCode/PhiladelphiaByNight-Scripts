@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.13.0
+// @version      1.13.1
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.13.0';
+  const TK_VERSION = '1.13.1';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -2819,7 +2819,7 @@
               looks.length ? c.el('span', { className: 'pbn-nm-list__orig', textContent: looks.join(' · ') }) : null);
             b.addEventListener('click', () => {
               if (pickFor) { linkTo(pickFor, id); back(); }
-              else if (CARDS) { close(); openDossier(x.looks[0]); }
+              else if (CARDS) { close(); openDossier(x.looks[0], { seen: false }); }
               else { renderEditor(menu, x.looks[0], true); currentPop?.place(); }
             });
             list.append(b);
@@ -3223,12 +3223,17 @@
         applyLook();
         return win;
       }
-      function openDossier(orig, { quiet = false } = {}) {
+      // seen: false when opened from the People list, which isn't a sighting.
+      function openDossier(orig, { quiet = false, seen = true } = {}) {
         orig = norm(orig);
         const k = keyOf(orig);
         const person = personOf(orig);
         let t = tabs.find(x => x === k || (person && personOf(tabOrig.get(x)) === person));
-        if (!t) { t = k; tabs.push(k); tabOrig.set(k, orig); }
+        if (!t) { tabs.push(t = k); tabOrig.set(t, orig); }
+        // The appearance you just clicked or looked at is the current one, so
+        // the tab and its Look/Whisper buttons switch to it (after a
+        // reintroduction the old name no longer works as a target).
+        if (seen) { tabOrig.set(t, orig); seenAt.set(k, ++seenTick); }
         activeTab = t;
         ensureWin();
         win.hidden = false;
