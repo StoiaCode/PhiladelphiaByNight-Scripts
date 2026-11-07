@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.13.1
+// @version      1.14.0
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.13.1';
+  const TK_VERSION = '1.14.0';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -2251,7 +2251,7 @@
     description: "Click a name or short desc in the chat for that person's dossier: your own name for them, your notes (Markdown) and their last /look. Exact matches only, kept per character.",
     note: "Your names get a dotted gold underline and a ✦, people you only have notes on a grey dotted underline. The toolkit's section in the Settings tab has People & notes (everyone you've named or noted) and a switch between your names and the game's text.",
     settings: [
-      { key: 'cards', label: 'Dossiers: clicking a name opens their dossier window (right-click for the quick menu)', type: 'toggle', default: true },
+      { key: 'cards', label: 'Dossiers: clicking a name opens their dossier window (right-click for Look, Whisper, Colour…)', type: 'toggle', default: true },
       { key: 'autoOpen', label: 'Open the dossier when you /look at someone', type: 'toggle', default: true },
       { key: 'fold', label: 'Fold /look descriptions in the chat into one line', type: 'toggle', default: true },
       { key: 'log', label: 'Save Log writes', type: 'select', default: 'game',
@@ -2675,6 +2675,14 @@
           color: #9a8a7a; font: inherit; font-style: normal; font-size: .95rem;
         }
         .pbn-nm-look button:hover { color: #e07062; background: #5a121233; }
+        .pbn-tk-menu.pbn-nm-menu.pbn-nm-quick { width: auto; min-width: 220px; max-width: min(340px, 94vw); }
+        .pbn-nm-quick__who { padding: 8px 16px 6px; color: #e8ddd0; font-size: 1.1rem; font-weight: bold; overflow-wrap: anywhere; }
+        .pbn-nm-swatches { display: grid; grid-template-columns: repeat(5, 40px); gap: 8px; padding: 8px 16px 10px; }
+        .pbn-nm-swatch {
+          width: 40px; height: 40px; padding: 0; border: 2px solid #5a1212; border-radius: 50%; cursor: pointer;
+          background: var(--pbn-sw, #2a1a1a); color: #e8ddd0; font: inherit; font-size: .9rem;
+        }
+        .pbn-nm-swatch:hover, .pbn-nm-swatch:focus-visible { border-color: #e8ddd0; outline: none; }
       `);
 
       // ---- Menus
@@ -2733,7 +2741,86 @@
         for (const [k, o] of seenNames) if (!out.has(k)) out.set(k, { orig: o, looked: false });
         return [...out].filter(([k]) => !index.has(k) && !isSelf(k) && k !== keyOf(except)).map(([, v]) => v);
       }
+      // ---- Right-click on a name: a short menu. /color is the game's own
+      // command (only for people you've been introduced to, or "self").
+      const COLOR_SLOTS = [...Array.from({ length: 16 }, (_, i) => [String(i), 'chat-name-color-' + i, 'Colour ' + i]),
+        ['gold', 'chat-name-self', 'Warm gold'], ['silver', 'chat-name-silver', 'Silver'], ['white', 'chat-name-pale-white', 'Pale white']];
+      let slotColorCache = null;
+      // The game's palette, read off probe elements in the chat.
+      function slotColors() {
+        if (slotColorCache) return slotColorCache;
+        const cont = document.querySelector(CHAT);
+        if (!cont) return null;
+        const ref = cont.querySelector('[class*="chat-name-"]');
+        const base = getComputedStyle(cont).color;
+        const out = {};
+        let differs = false;
+        for (const [slot, cls] of COLOR_SLOTS) {
+          const probe = c.el('span', { className: cls, hidden: true });
+          c.copyScopeAttrs(ref, probe);
+          cont.append(probe);
+          out[slot] = getComputedStyle(probe).color;
+          if (out[slot] !== base) differs = true;
+          probe.remove();
+        }
+        return differs ? (slotColorCache = out) : null;
+      }
+      const isMe = orig => isSelf(orig) || (bookChar !== 'default' && keyOf(orig) === keyOf(bookChar));
+      // The name /color needs: their real name from a look, or the text
+      // itself if it reads like a name (capitalised words, no commas).
+      function colorName(orig) {
+        const named = namedLook(orig)?.as;
+        if (named) return named;
+        for (const l of [targetFor(orig), orig]) if (!/,/.test(l) && l.split(' ').length <= 4 && l.split(' ').every(w => /^\p{Lu}/u.test(w))) return l;
+        return null;
+      }
+      function renderColors(menu, orig, back) {
+        menu.classList.add('pbn-nm-quick');
+        menu.textContent = '';
+        const who = isMe(orig) ? 'self' : colorName(orig);
+        const colors = slotColors();
+        menu.append(c.el('div', { className: 'pbn-tk-menu__head', textContent: 'Name colour' }),
+          c.el('div', { className: 'pbn-nm-quick__who', textContent: who === 'self' ? 'You' : who }));
+        const grid = c.el('div', { className: 'pbn-nm-swatches' });
+        for (const [slot, , label] of COLOR_SLOTS) {
+          const b = c.el('button', { type: 'button', className: 'pbn-nm-swatch', title: label + ' · /color ' + who + ' ' + slot, textContent: colors ? '' : slot.slice(0, 2) });
+          b.setAttribute('aria-label', label);
+          if (colors) b.style.setProperty('--pbn-sw', colors[slot]);
+          b.addEventListener('click', () => { close(); c.sendCommand('/color ' + who + ' ' + slot); });
+          grid.append(b);
+        }
+        menu.append(grid, item('Reset to default', () => { close(); c.sendCommand('/color reset ' + who); }));
+        if (back) menu.append(sep(), item('‹ Back', back));
+        setTimeout(() => grid.querySelector('button')?.focus(), 0);
+      }
+      function renderQuick(menu, orig) {
+        menu.classList.add('pbn-nm-quick');
+        menu.textContent = '';
+        const me = isMe(orig);
+        const target = me ? 'me' : targetFor(orig);
+        menu.append(c.el('div', { className: 'pbn-nm-quick__who', textContent: me ? bookChar : displayOf(orig) }),
+          item('Look', () => { close(); c.sendCommand('/look ' + target); }),
+          item('Whisper', () => { close(); startWhisper(target); }));
+        const col = item('Colour ▸', () => { renderColors(menu, orig, () => { renderQuick(menu, orig); currentPop?.place(); }); currentPop?.place(); });
+        if (!me && !colorName(orig)) { col.disabled = true; col.title = '/color only works on names of people you were introduced to'; }
+        menu.append(col, sep());
+        if (CARDS) menu.append(item('Dossier', () => { close(); openDossier(orig); }));
+        if (!me) menu.append(item(personOf(orig)?.name ? 'Rename, link, notes…' : 'Name, link, notes…', () => { renderEditor(menu, orig, false); currentPop?.place(); }));
+        setTimeout(() => menu.querySelector('.pbn-tk-menu__item:not(:disabled)')?.focus(), 0);
+      }
+      function openQuick(trigger, orig) {
+        const menu = newMenu();
+        renderQuick(menu, orig);
+        c.openPopover(trigger, menu);
+      }
+      function openColors(trigger, orig) {
+        const menu = newMenu();
+        renderColors(menu, orig, null);
+        c.openPopover(trigger, menu);
+      }
+
       function renderEditor(menu, orig, fromList) {
+        menu.classList.remove('pbn-nm-quick');
         const e = personOf(orig);
         const again = () => { renderEditor(menu, orig, fromList); currentPop?.place(); };
         menu.textContent = '';
@@ -2790,6 +2877,7 @@
       // Everyone saved for this character, searchable. With pickFor it's the
       // "Same person as…" chooser for that look.
       function renderList(menu, { pickFor = null, back = null } = {}) {
+        menu.classList.remove('pbn-nm-quick');
         menu.textContent = '';
         const self = pickFor ? personOf(pickFor) : null;
         menu.append(c.el('div', { className: 'pbn-tk-menu__head', textContent: pickFor ? 'Who is this?' : 'People — ' + bookChar }));
@@ -2879,9 +2967,9 @@
       }
       function onChatContext(e) {
         const span = e.target.closest?.(`${CHAT} .${NM}`);
-        if (!span || !CARDS) return;
+        if (!span) return;
         e.preventDefault();
-        openEditor(span, span.dataset.pbnNmOrig);
+        openQuick(span, span.dataset.pbnNmOrig);
       }
 
       function onStorage(e) {
@@ -3309,6 +3397,9 @@
         lookBtn.addEventListener('click', () => c.sendCommand('/look ' + target));
         const whisperBtn = c.el('button', { type: 'button', className: 'pbn-dos__btn', textContent: 'Whisper', title: 'Start /whisper ' + target + ' … in the command box' });
         whisperBtn.addEventListener('click', () => startWhisper(target));
+        const colorBtn = c.el('button', { type: 'button', className: 'pbn-dos__btn', textContent: 'Colour', title: 'Their name colour in the chat (/color)' });
+        colorBtn.addEventListener('click', () => openColors(colorBtn, orig));
+        if (!self && !colorName(orig)) { colorBtn.disabled = true; colorBtn.title = '/color only works on names of people you were introduced to'; }
         // The short desc is shown on its own line, so it isn't listed again.
         const display = displayOf(orig);
         const shortDesc = namedLook(orig)?.sub || '';
@@ -3316,7 +3407,7 @@
         P.who.textContent = '';
         P.who.append(...[
           c.el('div', { className: 'pbn-dos__top' }, c.el('div', { className: 'pbn-dos__name', textContent: display }),
-            c.el('div', { className: 'pbn-dos__actions' }, lookBtn, whisperBtn, self ? null : edit)),
+            c.el('div', { className: 'pbn-dos__actions' }, lookBtn, whisperBtn, colorBtn, self ? null : edit)),
           self ? c.el('div', { className: 'pbn-dos__alias', textContent: 'yourself' })
             : aliases.length ? c.el('div', { className: 'pbn-dos__alias', textContent: (person?.name ? 'Seen as: ' : 'Also seen as: ') + aliases.join(' · ') }) : null,
           shortDesc ? c.el('div', { className: 'pbn-dos__alias', textContent: shortDesc }) : null,

@@ -390,6 +390,7 @@ Give people your own names. Someone you only know as *"a man in a grey coat"* in
 **Clicking a name** in the chat opens that person's **dossier**: a window that floats over the page with one tab per person you've opened. A tab shows:
 
 - your name for them and their other appearances (with a **Name · link…** button for renaming and "Same person as…"),
+- **Colour** sets the colour of their name in your chat with the game's `/color` (see the right-click menu below),
 - **Look** sends `/look` at them right away (the new look replaces the saved one), and **Whisper** starts `/whisper <them> ` in the command box for you to finish. A line you had already typed (not a command) becomes the whisper's message. Both use whatever the game showed them as most recently, since anyone in the room can be named by their description,
 - your notes on them, editable right there,
 - **their look**: the last `/look` you did on them, with the time you saw it. Links in it (people often put image links in their descs) are clickable and open in a new tab.
@@ -404,9 +405,18 @@ The window can be dragged by its **Dossiers** title bar, resized from the bottom
 
 All three behaviours can be switched off in the toolkit panel: dossiers on click, opening on `/look`, and folding looks in the chat.
 
-### The quick menu
+### Right-click menu
 
-**Right-click** a name (or Shift/Alt-click it) for the quick menu. It's also what clicking opens when dossiers are switched off:
+**Right-click** a name in the chat for a short menu:
+
+- **Look** and **Whisper**, as in the dossier. On your own name they use `me`.
+- **Colour ▸** opens the game's name colours: 16 palette colours plus warm gold, silver and pale white. Clicking one sends `/color <name> <colour>` (or `/color self …` on your own name); **Reset to default** sends `/color reset <name>`. The colours only change your own view. The game only accepts names of people you've been introduced to, so it's greyed out on short descs.
+- **Dossier** opens their dossier.
+- **Name, link, notes…** opens the full editor below in the same menu.
+
+### The name editor
+
+**Name, link, notes…** in the right-click menu, **Name · link…** in a dossier, or Shift/Alt-clicking a name opens the editor. It's also what clicking opens when dossiers are switched off:
 
 - **Name this person / You call them** — type the name and press Enter. Clearing the field and saving removes the name (notes stay).
 - **Notes** — your own notes on this person, with Markdown: `# heading`, `**bold**`, `*italic*`, `- lists`, `> quotes`, `[links](https://…)`. Click **Write notes…** (or click existing notes) to edit. Notes are saved as you type, so closing the menu or pressing Esc never loses anything; **Done** (or Ctrl+Enter) shows them formatted again.
