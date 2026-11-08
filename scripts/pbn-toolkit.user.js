@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.14.0
+// @version      1.14.1
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.14.0';
+  const TK_VERSION = '1.14.1';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -157,20 +157,38 @@
   }
 
   // Sends a command; whatever was half-typed in the box is put back after.
-  async function sendCommand(cmd, { restoreDraft = true } = {}) {
+  // Sends are queued: each one owns the shared box from writing its command
+  // until its draft is back, so two buttons pressed together can never
+  // submit each other's text (or the unsent draft). Only ever runs on /play,
+  // so a delayed send can't land in some other page's text field.
+  let sendQueue = Promise.resolve();
+  function sendCommand(cmd, opts) {
+    const run = sendQueue.then(() => sendNow(cmd, opts));
+    sendQueue = run.catch(e => { LOG(e); return false; });
+    return sendQueue;
+  }
+
+  async function sendNow(cmd, { restoreDraft = true } = {}) {
+    if (!isPlay()) return false;
     const input = findCommandInput();
     if (!input) return false;
     const draft = input.value;
     setNativeValue(input, cmd);
     input.focus();
     await sleep(0);
+    // Something else replaced the box's text meanwhile (the player typing,
+    // the page re-rendering): don't submit text this call didn't put there.
+    if (!input.isConnected || input.value !== cmd) return false;
     pressEnter(input);
     if (restoreDraft && draft) {
       // Put the draft back once the game has cleared the box after sending
-      // (or after a second if it never does), caret at the end.
+      // (or after a second if it never does), caret at the end. If the
+      // player has started typing something new by then, leave that alone.
       await waitFor(() => input.value !== cmd, 1000, 20);
-      setNativeValue(input, draft);
-      try { input.setSelectionRange(draft.length, draft.length); } catch (e) { /* ignore */ }
+      if (input.isConnected && (input.value === '' || input.value === cmd)) {
+        setNativeValue(input, draft);
+        try { input.setSelectionRange(draft.length, draft.length); } catch (e) { /* ignore */ }
+      }
     }
     return true;
   }
@@ -674,10 +692,16 @@
         const show = () => { btn.textContent = `${label} · ${left}`; };
         btn.classList.add('pbn-cmd-btn--pending');
         show();
+        // Bound to the character it was queued for: dropped if the player
+        // has switched character or left /play by the time it is due.
+        const who = c.getCharName();
         pending = {
           btn, label,
           tick: setInterval(() => { left--; show(); }, 1000),
-          timer: setTimeout(() => { cancelPending(); c.sendCommand(then); }, THEN_DELAY),
+          timer: setTimeout(() => {
+            cancelPending();
+            if (c.isPlay() && c.getCharName() === who && btn.isConnected) c.sendCommand(then);
+          }, THEN_DELAY),
         };
       }
 
@@ -826,6 +850,8 @@
         mount();
       }, () => {
         if (observer) { observer.disconnect(); observer = null; }
+        cancelPending();
+        openExpand?.collapse();
         document.getElementById(CMD.BAR_ID)?.remove();
       });
     },
@@ -877,6 +903,7 @@
         const tpl = document.createElement('template');
         tpl.innerHTML = html;
         const root = tpl.content;
+        censorApi?.unwrap(root); // the word filter is display only (DOM fallback copies carry it)
         namesApi?.prepareLogCopy(root, withNames);
         root.querySelectorAll('[class*="q-ml-"], [class*="q-mx-"], [class*="q-px-"], [class*="q-pl-"]').forEach(n => n.before(' '));
         root.querySelectorAll('[class*="q-mr-"], [class*="q-mx-"], [class*="q-px-"], [class*="q-pr-"]').forEach(n => n.after(' '));
@@ -1487,14 +1514,27 @@
         if (compass.dataset.pbnIntercepted) return;
         compass.dataset.pbnIntercepted = '1';
         // pointerdown fires even on disabled cells; capture runs before Vue.
+        // Keyboard activation (Enter/Space on a focused cell) only produces a
+        // click, so a click with no pointerdown just before it sends too.
+        // Either way one activation sends one command.
+        let viaPointer = null;
         compass.addEventListener('pointerdown', e => {
           if (mode === 'walk') return;
           const cell = e.target.closest('.compass__cell');
           const dir = cell && cellDirection(cell);
-          if (dir) c.sendCommand(`/${mode} ${dir}`);
+          if (!dir) return;
+          viaPointer = { cell, at: Date.now() };
+          c.sendCommand(`/${mode} ${dir}`);
         }, true);
         compass.addEventListener('click', e => {
-          if (mode !== 'walk' && e.target.closest('.compass__cell')) { e.preventDefault(); e.stopPropagation(); }
+          if (mode === 'walk') return;
+          const cell = e.target.closest('.compass__cell');
+          if (!cell) return;
+          e.preventDefault(); e.stopPropagation();
+          const sentAlready = viaPointer && viaPointer.cell === cell && Date.now() - viaPointer.at < 1500;
+          viaPointer = null;
+          const dir = cellDirection(cell);
+          if (!sentAlready && dir) c.sendCommand(`/${mode} ${dir}`);
         }, true);
       }
 
@@ -1548,6 +1588,10 @@
       } catch (e) { return { order: [], cols: CC.DEFAULT_COLS }; }
     },
     save(state) { localStorage.setItem(CC.KEY, JSON.stringify(state)); },
+    // Writes one field over what is stored now, and keeps the grid's single
+    // shared state object in step, so no control ever writes back a stale
+    // snapshot of the other field.
+    update(state, patch) { Object.assign(state, CC.load(), patch); CC.save({ order: state.order, cols: state.cols }); },
     setCols(n) { document.documentElement.style.setProperty(CC.COLS_VAR, String(n)); },
   };
 
@@ -1580,7 +1624,7 @@
         const knownSet = new Set(known);
         const finalOrder = known.concat(keyed.filter(k => !knownSet.has(k.key)).map(k => k.key));
         finalOrder.forEach((key, i) => { const e = keyed.find(k => k.key === key); if (e) e.x.style.order = String(i); });
-        if (finalOrder.join('') !== state.order.join('')) { state.order = finalOrder; CC.save(state); }
+        if (finalOrder.join('') !== state.order.join('')) CC.update(state, { order: finalOrder });
       }
       function refreshButtons(grid) {
         const cards = currentOrderedCards(grid);
@@ -1596,8 +1640,7 @@
         if (idx < 0 || swap < 0 || swap >= cards.length) return;
         [cards[idx], cards[swap]] = [cards[swap], cards[idx]];
         cards.forEach((x, i) => { x.style.order = String(i); });
-        state.order = cards.map(getCardKey);
-        CC.save(state);
+        CC.update(state, { order: cards.map(getCardKey) });
         refreshButtons(grid);
       }
       function reveal(grid) {
@@ -1718,8 +1761,8 @@
         minus.setAttribute('aria-label', 'Fewer cards per row');
         plus.setAttribute('aria-label', 'More cards per row');
         const step = d => {
-          state.cols = Math.min(CC.MAX_COLS, Math.max(CC.MIN_COLS, state.cols + d));
-          CC.setCols(state.cols); CC.save(state); countEl.textContent = String(state.cols);
+          CC.update(state, { cols: Math.min(CC.MAX_COLS, Math.max(CC.MIN_COLS, CC.load().cols + d)) });
+          CC.setCols(state.cols); countEl.textContent = String(state.cols);
         };
         minus.addEventListener('click', () => step(-1));
         plus.addEventListener('click', () => step(1));
@@ -1747,7 +1790,9 @@
           reveal(grid);
         }
         arrange(state);
-        gridObserver = new MutationObserver(() => arrange(CC.load()));
+        // Cards added or replaced later are wired against this same object
+        // (refreshed in place), never a second copy.
+        gridObserver = new MutationObserver(() => { Object.assign(state, CC.load()); arrange(state); });
         gridObserver.observe(grid, { childList: true });
       }
       function syncGrid() { const g = document.querySelector('.mc-grid'); if (g && g !== mountedGrid) mount(); }
@@ -2068,11 +2113,26 @@
       }
 
       // The game's own [SYSTEM] confirmations keep the list current. Only
-      // system lines count, so a player quoting them can't change anything.
-      const SPEAK_RE = /You will now speak in ([A-Za-z][A-Za-z ']*?)\./;
-      const ENGLISH_RE = /You go back to speaking plain English/;
-      const LEARNED_RE = /You have learned ([A-Za-z][A-Za-z ']*?)\./;
-      const isSystemLine = m => m.type === 'system' || /\[SYSTEM\]/.test(m.html || '');
+      // system lines count, and the confirmation has to be the whole line, so
+      // a player quoting one can't change anything.
+      const LEAD = String.raw`^\s*(?:\[SYSTEM\]\s*)?`;
+      const SPEAK_RE = new RegExp(LEAD + String.raw`You will now speak in ([A-Za-z][A-Za-z ']*?)\.\s*$`);
+      const ENGLISH_RE = new RegExp(LEAD + String.raw`You go back to speaking plain English\b[^\n]*$`);
+      const LEARNED_RE = new RegExp(LEAD + String.raw`You have learned ([A-Za-z][A-Za-z ']*?)\.\s*$`);
+      // The message's own type decides when it has one. Only a message with
+      // no type at all falls back to its markup, and then only to the game's
+      // [SYSTEM] label as the very first thing in it.
+      function isSystemLine(m) {
+        if (m.type != null && m.type !== '') return m.type === 'system';
+        const tpl = document.createElement('template');
+        tpl.innerHTML = m.html || '';
+        const label = tpl.content.querySelector('span.text-orange-9');
+        if (!label || label.textContent.trim() !== '[SYSTEM]') return false;
+        const before = document.createRange();
+        before.setStart(tpl.content, 0);
+        before.setEndBefore(label);
+        return !before.toString().trim();
+      }
       function onGameText(text) {
         let m;
         if (ENGLISH_RE.test(text)) update(d => { d.current = ENGLISH; });
@@ -2225,13 +2285,18 @@
         refreshBadge();
       }
 
+      // The badge follows the active character (it can change without the
+      // play page reloading) and changes made in another tab.
+      const onStorage = e => { if (e.key === KEY) refreshBadge(); };
       let tick = null;
       c.onRoute(c.isPlay, () => {
-        const run = () => { ensureQuickButton(); syncHook(); };
+        const run = () => { ensureQuickButton(); syncHook(); refreshBadge(); };
         run();
         tick = setInterval(run, 1000);
+        window.addEventListener('storage', onStorage);
       }, () => {
         clearInterval(tick);
+        window.removeEventListener('storage', onStorage);
         if (hooked) { hooked.stops.forEach(s => s()); hooked = null; }
       });
     },
@@ -2298,17 +2363,22 @@
         // A person is kept if they have a name, notes, or more than one look.
         for (const [id, person] of Object.entries(b)) if (!person.looks.length || (!person.name && !person.notes && person.looks.length < 2)) delete b[id];
         if (Object.keys(b).length) all[bookChar] = b; else delete all[bookChar];
-        localStorage.setItem(KEY, JSON.stringify(all));
+        // Storage can refuse (full, blocked): then nothing changes here
+        // either, and the caller is told so it can keep the user's text.
+        try { localStorage.setItem(KEY, JSON.stringify(all)); } catch (e) { LOG('names: could not save', e); return false; }
         book = b;
         reindex();
         linesCache = null;
+        return true;
       }
       function update(fn) {
         const all = loadAll();
         const b = migrate(all[bookChar] || {});
         fn(b);
-        write(all, b);
+        const ok = write(all, b);
         refreshAll();
+        if (!ok) alert("PbN Toolkit: that change couldn't be saved — the browser refused to store it (storage full or blocked).");
+        return ok;
       }
       const pastNames = (names, except) => names.filter(w => w && w !== except).filter((w, i, a) => a.indexOf(w) === i).slice(0, MAX_WAS);
       // Clearing the name keeps the person if there are notes on them.
@@ -2325,6 +2395,7 @@
       }
       // Called on every keystroke; the chat is only re-rendered when someone
       // gains or loses notes (that changes their marker).
+      // Returns false if storage refused the write.
       function saveNotes(orig, text) {
         const all = loadAll();
         const b = migrate(all[bookChar] || {});
@@ -2334,9 +2405,13 @@
           if (!id) b[id = newId()] = { looks: [norm(orig)], name: '', was: [], off: false };
           b[id].notes = text;
         } else if (id) delete b[id].notes;
-        write(all, b);
+        if (!write(all, b)) return false;
         if (had !== !!text.trim()) refreshAll();
+        return true;
       }
+      // Notes the browser refused to store, kept for this page session so
+      // closing the menu or dossier doesn't lose them: { [look key]: { char, text } }.
+      const unsavedNotes = new Map();
       // "Same person as…": this look joins the target. If it already belonged
       // to someone, the two are merged: notes appended, names kept in "was".
       function mergeInto(b, orig, targetId) {
@@ -2428,7 +2503,10 @@
         };
         const walk = n => {
           if (n.nodeType === 3) {
-            const t = n.nodeValue;
+            // A word the Chat Log filter has masked reads as the real word, so
+            // a name is always known by the game's text (masks keep the length).
+            const real = n.parentNode?.classList?.contains('pbn-cf') ? n.parentNode.dataset.pbnCf : null;
+            const t = real != null && real.length === n.nodeValue.length ? real : n.nodeValue;
             for (let i = 0; i < t.length; i++) add(/\s/.test(t[i]) ? ' ' : t[i], [n, i]);
           } else if (n.nodeType === 1) {
             if (n.classList.contains(NM)) add(OBJ, null);
@@ -2465,7 +2543,8 @@
         span.className = NM;
         span.dataset.pbnNmOrig = orig;
         span.append(r.extractContents());
-        if (span.children.length) span.dataset.pbnNmHtml = span.innerHTML; // keeps the game's colours for switching back
+        // keeps the game's colours for switching back (unmasked: the filter is re-applied on display)
+        if ([...span.children].some(ch => !ch.classList.contains('pbn-cf'))) span.dataset.pbnNmHtml = plainHtml(span);
         r.insertNode(span);
       }
       const NAME_END = /[\s,.!?;:'’]/;
@@ -2530,16 +2609,34 @@
           if (m && known.has(keyOf(m[2]))) wrapAt(map, m[1].length, m[1].length + m[2].length);
         });
       }
+      // A name span's content with any word-filter masks undone, so it can be
+      // compared with what it should show without fighting the filter.
+      function plainHtml(span) {
+        if (!span.querySelector('.pbn-cf')) return span.innerHTML;
+        const x = span.cloneNode(true);
+        censorApi?.unwrap(x);
+        return x.innerHTML;
+      }
+      function plainText(span) {
+        if (!span.querySelector('.pbn-cf')) return span.textContent;
+        const x = span.cloneNode(true);
+        censorApi?.unwrap(x);
+        return x.textContent;
+      }
       function render(span, forLog = false) {
         const orig = span.dataset.pbnNmOrig;
         const e = personOf(orig);
         const mine = !!e?.name && (forLog || (view === 'mine' && !e.off));
         const html = span.dataset.pbnNmHtml;
+        let changed = false;
         if (mine || !html) {
           const text = mine ? e.name : orig;
-          if (span.textContent !== text || span.children.length) span.textContent = text;
-        } else if (span.innerHTML !== html) span.innerHTML = html;
+          if (plainText(span) !== text || [...span.children].some(ch => !ch.classList.contains('pbn-cf'))) { span.textContent = text; changed = true; }
+        } else if (plainHtml(span) !== html) { span.innerHTML = html; changed = true; }
         if (forLog) return;
+        // What was just written is the unfiltered text: mask it again here,
+        // since the filter only watches for new rows.
+        if (changed) censorApi?.apply(span);
         const notes = !!e?.notes;
         span.classList.toggle(`${NM}--mine`, mine);
         span.classList.toggle(`${NM}--noted`, notes && !mine && view === 'mine');
@@ -2570,6 +2667,17 @@
         el.dataset.pbnNmShown = out;
         if (cur !== out) el.textContent = out;
       }
+      // The character can change without the play page unmounting. Checked at
+      // every point that reads or writes per-character data, not only on the
+      // one-second poll, so a line arriving right after a switch is filed
+      // under the new character.
+      function syncChar() {
+        if ((c.getCharName() || 'default') === bookChar) return;
+        closeDossier(); loadBook(); looksCache = null; linesCache = null;
+        refreshAll();
+      }
+      // Per-character writes wait until the character is actually known.
+      function bookCharReady() { syncChar(); return !!c.getCharName(); }
       function processRow(row, live = false) {
         process(row);
         row.querySelectorAll('.' + NM).forEach(s => render(s));
@@ -2603,9 +2711,10 @@
         container = cont;
         processRow(cont);
         observer = new MutationObserver(ms => {
+          syncChar();
           const rows = new Set();
           for (const m of ms) for (const n of m.addedNodes) {
-            if (n.nodeType !== 1) continue;
+            if (n.nodeType !== 1 || n.classList.contains('pbn-cf')) continue; // the word filter at work
             const row = n.closest(ROW);
             if (row) rows.add(row); else n.querySelectorAll(ROW).forEach(r => rows.add(r));
           }
@@ -2700,6 +2809,7 @@
       function notesSection(menu, orig) {
         const box = c.el('div');
         const showView = () => {
+          if (unsavedNotes.get(keyOf(orig))?.char === bookChar) { showEdit(); return; }
           const notes = personOf(orig)?.notes || '';
           box.textContent = '';
           if (!notes) {
@@ -2712,18 +2822,33 @@
           box.append(shown);
         };
         const showEdit = () => {
-          const ta = c.el('textarea', { className: 'pbn-nm-notes-edit', value: personOf(orig)?.notes || '', spellcheck: true,
+          const k = keyOf(orig);
+          const pendingText = unsavedNotes.get(k)?.char === bookChar ? unsavedNotes.get(k).text : null;
+          const ta = c.el('textarea', { className: 'pbn-nm-notes-edit', value: pendingText ?? (personOf(orig)?.notes || ''), spellcheck: true,
             placeholder: 'Who they are, where you met, what they want, what they owe you…' });
           ta.setAttribute('aria-label', 'Notes');
-          ta.addEventListener('input', () => saveNotes(orig, ta.value));
+          const OK_HINT = 'Saved as you type. Markdown: **bold**, *italic*, # heading, - list, > quote, [link](https://…)';
+          const hint = c.el('span', { className: 'pbn-nm-notes-hint', textContent: OK_HINT });
+          hint.setAttribute('role', 'status');
+          const showSaved = ok => {
+            if (ok) unsavedNotes.delete(k); else unsavedNotes.set(k, { char: bookChar, text: ta.value });
+            hint.textContent = ok ? OK_HINT : 'NOT SAVED: the browser refused to store your notes (storage full or blocked). They are kept here until you close the page; copy them somewhere safe. Done retries.';
+            hint.style.color = ok ? '' : '#f0906a';
+          };
+          const trySave = () => { const ok = saveNotes(orig, ta.value); showSaved(ok); return ok; };
+          ta.addEventListener('input', trySave);
           const done = c.el('button', { type: 'button', className: 'pbn-nm-save', textContent: 'Done' });
-          const finish = () => { showView(); currentPop?.place(); };
+          const finish = () => {
+            if (unsavedNotes.has(k) && !trySave() &&
+              !confirm("Your notes still can't be saved. Close the editor anyway? They stay available until you close the page.")) return;
+            if (unsavedNotes.has(k)) { box.textContent = ''; box.append(item('✎ Unsaved notes — reopen…', showEdit)); currentPop?.place(); return; }
+            showView(); currentPop?.place();
+          };
           done.addEventListener('click', finish);
           ta.addEventListener('keydown', ev => { if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); finish(); } });
           box.textContent = '';
-          box.append(ta, c.el('div', { className: 'pbn-nm-notes-bar' },
-            c.el('span', { className: 'pbn-nm-notes-hint', textContent: 'Saved as you type. Markdown: **bold**, *italic*, # heading, - list, > quote, [link](https://…)' }),
-            done));
+          box.append(ta, c.el('div', { className: 'pbn-nm-notes-bar' }, hint, done));
+          if (pendingText != null) showSaved(false);
           currentPop?.place();
           ta.focus();
           ta.setSelectionRange(ta.value.length, ta.value.length);
@@ -2973,6 +3098,7 @@
       }
 
       function onStorage(e) {
+        if (e.key === LOOKS_KEY) { looksCache = null; linesCache = null; renderDossier(false); return; }
         if (e.key !== KEY && e.key !== VIEW_KEY) return;
         view = loadView();
         loadBook();
@@ -2996,10 +3122,15 @@
       const tabOrig = new Map();       // look key -> game text as shown
       let activeTab = null, win = null, dragAt = 0, looksCache = null, linesCache = null;
 
+      // Cached for reads; every write starts from what is stored right now
+      // (another tab may have saved looks since), and a storage event from
+      // another tab drops the cache.
       const looksAll = () => looksCache || (looksCache = loadJSON(LOOKS_KEY, {}));
       const looksFor = () => looksAll()[bookChar] || {};
+      const looksFresh = () => { looksCache = null; linesCache = null; return looksAll(); };
       function saveLook(key, data, onlyIfMissing) {
-        const all = looksAll();
+        if (!bookCharReady()) return false;
+        const all = looksFresh();
         const store = all[bookChar] || (all[bookChar] = {});
         if (onlyIfMissing && store[key]) return false;
         store[key] = { ...data, ...(store[key]?.nope ? { nope: store[key].nope } : {}) };
@@ -3097,7 +3228,7 @@
       }
 
       function notThem(a, b) {
-        const all = looksAll();
+        const all = looksFresh();
         const store = all[bookChar] || {};
         for (const [x, y] of [[a, b], [b, a]]) if (store[x]) store[x].nope = [...new Set([...(store[x].nope || []), y])];
         try { localStorage.setItem(LOOKS_KEY, JSON.stringify(all)); } catch (e) { LOG('names: could not save', e); }
@@ -3189,14 +3320,21 @@
         input.setSelectionRange(v.length, v.length);
       }
 
-      // Look text is the game's own (already sanitised) HTML; this is a second
-      // line of defence before it goes back on the page.
+      // Look text is the game's own (already sanitised) HTML, but a saved look
+      // can also come from an imported backup, so it is cleaned on its own
+      // terms before it goes back on the page: no active elements, no event
+      // handlers, and URL attributes only for http(s), relative or # targets.
+      const URL_ATTRS = /^(href|src|srcset|action|formaction|xlink:href|poster|background|data|codebase|ping)$/i;
       function cleanHtml(html) {
         const tpl = document.createElement('template');
-        tpl.innerHTML = html;
-        tpl.content.querySelectorAll('script, style, iframe, object, embed, link, meta').forEach(n => n.remove());
+        tpl.innerHTML = typeof html === 'string' ? html : '';
+        tpl.content.querySelectorAll('script, style, iframe, frame, frameset, object, embed, applet, link, meta, base, form, input, button, select, textarea, template, svg, math, noscript').forEach(n => n.remove());
         tpl.content.querySelectorAll('*').forEach(n => {
-          for (const a of Array.from(n.attributes)) if (/^on/i.test(a.name)) n.removeAttribute(a.name);
+          for (const a of Array.from(n.attributes)) {
+            const v = a.value.replace(/[\s\u0000-\u001f]+/g, '').toLowerCase();
+            if (/^on/i.test(a.name) || /^(srcdoc|is)$/i.test(a.name)) n.removeAttribute(a.name);
+            else if (URL_ATTRS.test(a.name) && /^[a-z][a-z0-9+.-]*:/.test(v) && !/^https?:/.test(v)) n.removeAttribute(a.name);
+          }
         });
         return tpl.content;
       }
@@ -3543,8 +3681,8 @@
       c.onRoute(c.isPlay, () => {
         loadBook();
         const run = () => {
+          syncChar();
           syncContainer();
-          if ((c.getCharName() || 'default') !== bookChar) { closeDossier(); loadBook(); looksCache = null; refreshAll(); }
         };
         run();
         tick = setInterval(run, 1000);
@@ -3586,7 +3724,8 @@
       const charName = () => c.getCharName() || 'default';
 
       // A roll card of yours: private ones read "You Roll...", public ones
-      // "<your name> Rolls...". Others' rolls in the room are ignored.
+      // "<your name> Rolls...". Others' rolls in the room are ignored, also
+      // ones by a character whose longer name merely starts with yours.
       function parseCard(html) {
         if (!/roll-card/.test(html)) return null;
         const tpl = document.createElement('template');
@@ -3595,7 +3734,10 @@
         if (!card) return null;
         const from = norm(card.querySelector('.roll-card-from')?.textContent);
         const me = c.getCharName();
-        if (!/^You Roll\b/i.test(from) && !(me && from.toLowerCase().startsWith(me.toLowerCase() + ' '))) return null;
+        if (!/^You Roll\b/i.test(from)) {
+          const roller = from.match(/^(.+?)\s+Rolls\b/i);
+          if (!me || !roller || roller[1].toLowerCase() !== norm(me).toLowerCase()) return null;
+        }
         const meta = norm(card.querySelector('.roll-card-pool-meta')?.textContent).match(/Pool\s+(\d+)\s+vs\s+Diff\s+(\d+)/i);
         const faces = Array.from(card.querySelectorAll('.roll-chip')).map(ch => Number(norm(ch.textContent))).filter(n => n >= 1 && n <= 10);
         const res = norm(card.querySelector('.roll-card-result')?.textContent);
@@ -3609,10 +3751,37 @@
           dice: faces.length, ones: faces.filter(f => f === 1).length, tens: faces.filter(f => f === 10).length, net, botch,
         };
       }
+      // Stored entries are re-checked on every read: an imported backup or a
+      // hand-edited value must never reach the table as anything but plain
+      // bounded numbers and text. Returns null for an entry not worth keeping.
+      const COUNT_MAX = 1e9;
+      const int = (v, max = COUNT_MAX) => (Number.isInteger(v) && v >= 0 && v <= max ? v : null);
+      function cleanEntry(e) {
+        if (!e || typeof e !== 'object' || Array.isArray(e)) return null;
+        const out = {
+          labels: typeof e.labels === 'string' ? e.labels.slice(0, 200) : 'Custom pool',
+          pool: int(e.pool, 100), diff: int(e.diff, 10),
+          n: int(e.n), dice: int(e.dice), ones: int(e.ones), tens: int(e.tens),
+          sux: int(e.sux), botches: int(e.botches), fails: int(e.fails), hist: {},
+        };
+        if (Object.values(out).some(v => v === null) || !out.n) return null;
+        if (e.hist && typeof e.hist === 'object' && !Array.isArray(e.hist)) {
+          for (const [k, v] of Object.entries(e.hist)) {
+            if (/^\d{1,3}$/.test(k) && int(v) !== null) out.hist[k] = v;
+          }
+        }
+        return out;
+      }
+      function cleanBook(book) {
+        const out = {};
+        if (!book || typeof book !== 'object' || Array.isArray(book)) return out;
+        for (const [k, e] of Object.entries(book)) { const ce = cleanEntry(e); if (ce) out[k] = ce; }
+        return out;
+      }
       function record(r) {
         if (document.documentElement.dataset.pbnRsRunning) return; // Roll Sampler at work
         const all = loadAll();
-        const book = all[charName()] || (all[charName()] = {});
+        const book = all[charName()] = cleanBook(all[charName()]);
         const k = `${r.labels}|${r.pool}|${r.diff}`;
         const e = book[k] || (book[k] = { labels: r.labels, pool: r.pool, diff: r.diff, n: 0, dice: 0, ones: 0, tens: 0, sux: 0, botches: 0, fails: 0, hist: {} });
         e.n++; e.dice += r.dice; e.ones += r.ones; e.tens += r.tens; e.sux += r.net;
@@ -3721,7 +3890,7 @@
       }
       function renderPanel() {
         const who = charName();
-        const book = loadAll()[who] || {};
+        const book = cleanBook(loadAll()[who]);
         const rows = Object.values(book).sort((a, b) => b.n - a.n);
         panel.querySelector('.pbn-rl__sub').textContent = `${who} · ${rows.reduce((a, e) => a + e.n, 0)} rolls`;
         const body = panel.querySelector('.pbn-rl__body');
@@ -3732,13 +3901,13 @@
             const o = e.diff ? odds(e.pool, e.diff) : null;
             const avg = (e.sux / e.n).toFixed(2);
             const hist = Object.entries(e.hist).sort((a, b) => a[0] - b[0]).map(([k, v]) => `${k}:${v}`).join(' ');
-            return `<tr><td>${esc(e.labels)}</td><td>${e.pool}</td><td>${e.diff || '–'}</td><td>${e.n}</td>
+            return `<tr><td>${esc(e.labels)}</td><td>${esc(e.pool)}</td><td>${e.diff ? esc(e.diff) : '–'}</td><td>${esc(e.n)}</td>
               <td>${avg}${o ? ` <small>(${o.mean.toFixed(2)})</small>` : ''}</td>
-              <td>${e.botches} · ${o ? vs(e.botches / e.n, o.botch, e.n, true) : pct(e.botches / e.n)}</td>
-              <td>${e.fails} · ${o ? vs(e.fails / e.n, o.fail, e.n, true) : pct(e.fails / e.n)}</td>
+              <td>${esc(e.botches)} · ${o ? vs(e.botches / e.n, o.botch, e.n, true) : pct(e.botches / e.n)}</td>
+              <td>${esc(e.fails)} · ${o ? vs(e.fails / e.n, o.fail, e.n, true) : pct(e.fails / e.n)}</td>
               <td>${e.dice ? vs(e.ones / e.dice, 0.1, e.dice, true) : '–'}</td>
               <td>${e.dice ? vs(e.tens / e.dice, 0.1, e.dice, false) : '–'}</td>
-              <td><small>${hist || '–'}${e.botches ? ` · botch:${e.botches}` : ''}</small></td></tr>`;
+              <td><small>${esc(hist || '–')}${e.botches ? ` · botch:${esc(e.botches)}` : ''}</small></td></tr>`;
           }).join('')}</table>`;
       }
       function open() {
@@ -4356,6 +4525,30 @@
     URL.revokeObjectURL(url);
   }
 
+  // Every imported value is text; where this browser (or the toolkit) keeps
+  // JSON under that key, it has to be JSON of the same shape. Modules still
+  // check what they read: this only stops an obviously wrong backup early.
+  const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
+  const IMPORT_SHAPES = {
+    [SETTINGS_KEY]: v => isObj(v),
+    'pbn-roll-log': v => isObj(v) && Object.values(v).every(book => isObj(book) && Object.values(book).every(e =>
+      isObj(e) && ['pool', 'diff', 'n', 'dice', 'ones', 'tens', 'sux', 'botches', 'fails'].every(f => Number.isInteger(e[f]) && e[f] >= 0) &&
+      (e.labels === undefined || typeof e.labels === 'string') &&
+      (e.hist === undefined || (isObj(e.hist) && Object.entries(e.hist).every(([h, n]) => /^\d{1,3}$/.test(h) && Number.isInteger(n) && n >= 0))))),
+    'pbn-dossier-looks': v => isObj(v) && Object.values(v).every(store => isObj(store) && Object.values(store).every(l =>
+      isObj(l) && typeof l.html === 'string' && (l.at === undefined || Number.isFinite(l.at)))),
+  };
+  function importValueOk(k, v) {
+    if (typeof v !== 'string') return false;
+    let parsed, local;
+    const parse = t => { try { return { ok: true, v: JSON.parse(t) }; } catch (e) { return { ok: false }; } };
+    if (IMPORT_SHAPES[k]) { parsed = parse(v); return parsed.ok && IMPORT_SHAPES[k](parsed.v); }
+    const cur = localStorage.getItem(k);
+    if (cur === null || !(local = parse(cur)).ok || typeof local.v !== 'object' || local.v === null) return true;
+    parsed = parse(v);
+    return parsed.ok && typeof parsed.v === 'object' && parsed.v !== null && Array.isArray(parsed.v) === Array.isArray(local.v);
+  }
+
   function importSettings() {
     const input = el('input', { type: 'file', accept: '.json,application/json' });
     input.addEventListener('change', async () => {
@@ -4363,11 +4556,21 @@
       if (!file) return;
       let parsed;
       try { parsed = JSON.parse(await file.text()); } catch (e) { alert(`That file isn't valid JSON: ${e.message}`); return; }
-      if (parsed?.app !== 'pbn-toolkit' || !parsed.data || typeof parsed.data !== 'object') { alert("That doesn't look like a PbN Toolkit backup."); return; }
+      if (parsed?.app !== 'pbn-toolkit' || !parsed.data || typeof parsed.data !== 'object' || Array.isArray(parsed.data)) { alert("That doesn't look like a PbN Toolkit backup."); return; }
       const keys = Object.keys(parsed.data).filter(isOurKey);
+      const bad = keys.filter(k => !importValueOk(k, parsed.data[k]));
+      if (bad.length) { alert(`Nothing was imported: these entries in the backup aren't in the expected format:\n${bad.join('\n')}`); return; }
       if (!confirm(`Import ${keys.length} saved item(s) from ${parsed.exported ? new Date(parsed.exported).toLocaleString() : 'this backup'}? ` +
         'Matching settings in this browser are replaced. The page reloads afterwards.')) return;
-      keys.forEach(k => { if (typeof parsed.data[k] === 'string') localStorage.setItem(k, parsed.data[k]); });
+      // All or nothing: if storage refuses part way, what was written is undone.
+      const before = keys.map(k => [k, localStorage.getItem(k)]);
+      try {
+        keys.forEach(k => localStorage.setItem(k, parsed.data[k]));
+      } catch (e) {
+        for (const [k, v] of before) { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e2) { /* best effort */ } }
+        alert(`The import failed and was undone: the browser refused to store it (${e.message}).`);
+        return;
+      }
       location.reload();
     });
     input.click();
