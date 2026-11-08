@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.14.1
+// @version      1.15.0
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.14.1';
+  const TK_VERSION = '1.15.0';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -865,7 +865,7 @@
   defineModule({
     id: 'chat-log',
     name: 'Chat Log',
-    description: 'Save Log records the RP chat for download, plus Search and Hide in the chat tab bar, a button back to the newest messages when you’ve scrolled up, and a word filter.',
+    description: 'Save Log records the RP chat for download (kept across reloads, earlier sessions under ▾), plus Search and Hide in the chat tab bar, a button back to the newest messages when you’ve scrolled up, and a word filter.',
     settings: [
       { key: 'search', label: 'Search button', type: 'toggle', default: true },
       { key: 'hide', label: 'Hide button', type: 'toggle', default: true },
@@ -885,7 +885,7 @@
 
       // ---- Recording: primarily from the play component's RP `messages`
       // array (activityMessages is ignored), with a DOM-observer fallback.
-      const sessionStart = new Date();
+      let sessionStart = new Date();
       const entries = [];
       const loggedMsgs = new WeakSet();
       const seenKeys = new Set();
@@ -911,7 +911,61 @@
         return root.textContent.replace(/\s+/g, ' ').trim();
       }
 
-      const record = (text, ts, html) => { if (text) entries.push({ ts, text, html }); };
+      // ---- Kept across reloads in IndexedDB, one record per line. A reload
+      // within SESSION_GAP of the last line carries on the same session;
+      // sessions are kept KEEP_DAYS for the "earlier sessions" menu.
+      const DB_NAME = 'pbn-chat-log', SESSION_GAP = 3 * 3600e3, KEEP_DAYS = 14;
+      let db = null, sessionId = null, restored = false;
+      const restoredTexts = new Set();
+      const idb = r => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+      const store = (name, mode = 'readonly') => db.transaction(name, mode).objectStore(name);
+      function openDb() {
+        const r = indexedDB.open(DB_NAME, 1);
+        r.onupgradeneeded = () => {
+          r.result.createObjectStore('sessions', { keyPath: 'id' });
+          r.result.createObjectStore('lines', { autoIncrement: true }).createIndex('session', 's');
+        };
+        return idb(r);
+      }
+      const sessionLines = id => idb(store('lines').index('session').getAll(id));
+      async function deleteSession(id) {
+        const tx = db.transaction(['sessions', 'lines'], 'readwrite');
+        tx.objectStore('sessions').delete(id);
+        const keys = await idb(tx.objectStore('lines').index('session').getAllKeys(id));
+        keys.forEach(k => tx.objectStore('lines').delete(k));
+      }
+      async function restore() {
+        try {
+          db = await openDb();
+          const sessions = await idb(store('sessions').getAll());
+          for (const x of sessions) if (Date.now() - x.last > KEEP_DAYS * 864e5) await deleteSession(x.id);
+          const latest = sessions.filter(x => Date.now() - x.last <= SESSION_GAP).sort((a, b) => b.last - a.last)[0];
+          if (latest) {
+            sessionId = latest.id;
+            sessionStart = new Date(latest.start);
+            for (const l of await sessionLines(latest.id)) {
+              entries.push({ ts: new Date(l.ts), text: l.text, html: l.html });
+              if (l.k) seenKeys.add(l.k);
+              restoredTexts.add(l.text);
+            }
+          } else sessionId = Date.now();
+        } catch (e) { LOG('chat log: could not open the saved log, this session is kept in memory only', e); db = null; }
+        restored = true;
+      }
+      function persist(e, k) {
+        if (!db) return;
+        try {
+          const tx = db.transaction(['sessions', 'lines'], 'readwrite');
+          tx.objectStore('sessions').put({ id: sessionId, start: sessionStart.getTime(), last: Date.now(), n: entries.length });
+          tx.objectStore('lines').add({ s: sessionId, ts: e.ts.getTime(), text: e.text, html: e.html, k });
+        } catch (err) { LOG('chat log: could not save a line', err); }
+      }
+      const record = (text, ts, html, k) => {
+        if (!text) return;
+        const e = { ts, text, html };
+        entries.push(e);
+        persist(e, k);
+      };
 
       function msgTimestamp(m) {
         const t = m.timestamp;
@@ -928,12 +982,13 @@
         const html = m.html || m.text || '';
         const text = htmlToText(html);
         const serverTs = msgTimestamp(m);
+        let key = null;
         if (serverTs) {
-          const key = `${serverTs.getTime()}|${text}`; // skip history replays already logged
+          key = `${serverTs.getTime()}|${text}`; // skip history replays already logged
           if (seenKeys.has(key)) return;
           seenKeys.add(key);
-        }
-        record(text, serverTs || new Date(), html);
+        } else if (m.isHistory && restoredTexts.has(text)) return; // replayed after a reload
+        record(text, serverTs || new Date(), html, key);
       }
 
       function drain(list) {
@@ -953,7 +1008,13 @@
       function unhook() { if (hooked) { hooked.stop(); hooked = null; } }
 
       let chatObserver = null, observedContainer = null;
-      function captureEl(row, ts) { if (seenEls.has(row)) return; seenEls.add(row); const html = row.innerHTML; record(htmlToText(html), ts || new Date(), html); }
+      function captureEl(row, ts) {
+        if (seenEls.has(row)) return;
+        seenEls.add(row);
+        const html = row.innerHTML, text = htmlToText(html);
+        if (ts && restoredTexts.has(text)) return; // already on the page before a reload
+        record(text, ts || new Date(), html);
+      }
       function startDomFallback() {
         const cont = document.querySelector(CHAT);
         if (!cont || cont === observedContainer) return;
@@ -970,7 +1031,8 @@
       }
       function stopDomFallback() { if (chatObserver) { chatObserver.disconnect(); chatObserver = null; } observedContainer = null; }
 
-      function saveLog() {
+      function saveLog() { download(entries, sessionStart); }
+      function download(entries, sessionStart) {
         if (!entries.length) return;
         // Lines are kept as recorded (game text); with Personal Names set to
         // "my names" they're rebuilt from their HTML with the current names.
@@ -996,7 +1058,17 @@
           border-left: 1px solid #5a1212; font-family: TMUnicorn, serif; font-size: .85rem; letter-spacing: .5px;
           color: #c4b49a; transition: color .15s, background .15s;
         }
-        #${BTN_ID}:hover { color: #e8ddd0; background: #5a121233; }
+        #${BTN_ID}:hover, #${BTN_ID}-more:hover { color: #e8ddd0; background: #5a121233; }
+        #${BTN_ID}-more {
+          flex: 0 0 auto; cursor: pointer; padding: 4px 12px; background: none; border: none; border-left: 1px solid #5a121266;
+          font-size: 1.15rem; line-height: 1; color: #c4b49a;
+        }
+        .pbn-log-menu { max-width: min(420px, 94vw); }
+        .pbn-log-menu__row { display: flex; align-items: stretch; }
+        .pbn-log-menu__row .pbn-tk-menu__item { flex: 1; justify-content: space-between; }
+        .pbn-log-menu__n { color: #9a8a7a; font-size: .9rem; white-space: nowrap; }
+        .pbn-log-menu__x { flex: 0 0 auto; padding: 0 14px; border: 0; background: none; cursor: pointer; color: #9a8a7a; font: inherit; }
+        .pbn-log-menu__x:hover { color: #e07062; background: #5a121233; }
         #${BTN_ID}:focus-visible { outline: 2px solid #e8ddd0; outline-offset: -2px; }
         #${HIDE_ID}, #${SEARCH_ID} {
           margin-left: auto; flex: 0 1 auto; min-width: 0; display: flex; align-items: stretch; border-left: 1px solid #5a1212;
@@ -1045,6 +1117,35 @@
         .chat-container .pbn-log-hit { outline: 1px solid #e0b84a99; outline-offset: -1px; background: #e0b84a14; border-radius: 3px; }
       `);
 
+      const fmtShort = d => d.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      async function buildEarlierMenu() {
+        const menu = c.el('div', { className: 'pbn-tk-menu pbn-log-menu' }, c.el('div', { className: 'pbn-tk-menu__head', textContent: 'Earlier sessions' }));
+        menu.setAttribute('role', 'menu');
+        const sessions = db ? (await idb(store('sessions').getAll())).filter(x => x.id !== sessionId).sort((a, b) => b.last - a.last) : [];
+        if (!sessions.length) menu.append(c.el('div', { className: 'pbn-tk-menu__note', textContent: 'None saved. Sessions are kept for ' + KEEP_DAYS + ' days.' }));
+        for (const x of sessions) {
+          const get = c.el('button', { type: 'button', className: 'pbn-tk-menu__item', title: 'Download this session' },
+            c.el('span', { textContent: fmtShort(new Date(x.start)) + ' – ' + new Date(x.last).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }),
+            c.el('span', { className: 'pbn-log-menu__n', textContent: (x.n || 0) + ' lines' }));
+          get.setAttribute('role', 'menuitem');
+          get.addEventListener('click', async () => {
+            const lines = await sessionLines(x.id);
+            download(lines.map(l => ({ ts: new Date(l.ts), text: l.text, html: l.html })), new Date(x.start));
+            currentPop?.close();
+          });
+          const del = c.el('button', { type: 'button', className: 'pbn-log-menu__x', textContent: '✕', title: 'Delete this saved session' });
+          del.setAttribute('aria-label', 'Delete the session of ' + fmtShort(new Date(x.start)));
+          del.addEventListener('click', async () => {
+            if (!confirm('Delete the saved log of ' + fmtShort(new Date(x.start)) + '? This can\'t be undone.')) return;
+            await deleteSession(x.id);
+            row.remove();
+          });
+          const row = c.el('div', { className: 'pbn-log-menu__row' }, get, del);
+          menu.append(row);
+        }
+        menu.append(c.el('div', { className: 'pbn-tk-menu__note', textContent: 'Saved in this browser. Reloading within ' + (SESSION_GAP / 3600e3) + ' hours carries on the current session.' }));
+        return menu;
+      }
       function ensureButton() {
         if (document.getElementById(BTN_ID)) return;
         const tabBar = document.querySelector('.chat-tab-bar');
@@ -1052,7 +1153,15 @@
         const b = c.el('button', { type: 'button', id: BTN_ID, textContent: 'Save Log', title: "Download this session's chat as a text file" });
         b.addEventListener('mousedown', e => e.preventDefault());
         b.addEventListener('click', saveLog);
-        tabBar.append(b);
+        const more = c.el('button', { type: 'button', id: BTN_ID + '-more', textContent: '▾', title: 'Earlier sessions' });
+        more.setAttribute('aria-label', 'Earlier sessions');
+        more.setAttribute('aria-haspopup', 'menu');
+        more.addEventListener('mousedown', e => e.preventDefault());
+        more.addEventListener('click', async () => {
+          if (currentPop?.trigger === more) { currentPop.close(); return; }
+          c.openPopover(more, await buildEarlierMenu());
+        });
+        tabBar.append(b, more);
       }
 
       // ---- Search (messages currently on the page; whitespace-insensitive;
@@ -1376,6 +1485,7 @@
         ensureCensor();
         if (WITH_HIDE) { tagWhispers(); refreshHideButton(); }
         if (hooked && hooked.inst.isUnmounted) unhook();
+        if (!restored) return;
         if (!hooked) {
           const inst = c.findPlayInstance();
           if (inst) { const wasFallback = !!observedContainer; stopDomFallback(); hookInstance(inst, { backfill: !wasFallback }); }
@@ -1388,7 +1498,8 @@
           if (b.title !== title) b.title = title;
         }
       }
-      c.onRoute(c.isPlay, () => { enteredAt = Date.now(); sync(); tick = setInterval(sync, 1000); }, () => {
+      const restoring = restore();
+      c.onRoute(c.isPlay, () => { enteredAt = Date.now(); sync(); restoring.then(sync); tick = setInterval(sync, 1000); }, () => {
         clearInterval(tick); tick = null;
         unhook(); stopDomFallback(); clearHits(); searchState = null; resetHide(); resetJump(); resetCensor();
       });

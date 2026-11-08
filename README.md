@@ -217,6 +217,8 @@ Adds a **Save Log** button to the chat tab bar. Messages are captured to memory 
 
 Nothing is written to browser storage — the log lives in memory only and is gone when the tab closes. Messages already in the chat when the script loads are included too.
 
+**In the toolkit, the log survives reloads.** It's saved in the browser (IndexedDB) as it's recorded. Reloading, or closing the tab and coming back within 3 hours, carries on the same session, and lines the game replays after the reload aren't logged twice. After a longer break a new session starts. The **▾** next to Save Log lists earlier sessions from the last 14 days, to download again or delete (✕). Older ones are cleared automatically. Like everything else the toolkit saves, the log stays in that one browser.
+
 ### Search
 
 A **Search** button sits next to **Save Log**. Type to search the chat: the newest match scrolls to the middle of the chat, gets outlined, and every match is highlighted.
