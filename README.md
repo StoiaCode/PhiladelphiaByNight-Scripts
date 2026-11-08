@@ -92,12 +92,20 @@ Buttons behave in one of three ways, depending on how each command is configured
 You can change which buttons appear — and what they do — entirely in the
 browser. Edits are saved permanently and survive reloads and browser restarts.
 
-1. In the toolkit: open the toolkit panel and click **Edit buttons…** under
-   Command Buttons. With the separate script: click your userscript
-   manager's toolbar icon and choose **"Edit command buttons"** from the
-   script's menu.
-2. A JSON editor opens. Adjust the list and click **Save** — the button bar
-   updates instantly.
+**In the toolkit**, click the **✎** at the end of the button bar (or
+**Edit buttons…** under Command Buttons in the toolkit panel). Each button is
+a row: its label, its command, what it does (*Paste into the box*, *Send
+right away* or *Ask for text, then send*) and, for the sending kinds, an
+optional follow-up command sent 3 seconds later. Drag rows by ⠿ or use ▲ / ▼
+to reorder, ✕ to delete, **+ Add a button** for a new one. A preview at the
+top shows the bar as it will look; click a button there to jump to its row.
+**Save** applies it, **Cancel** or Esc asks before throwing changes away.
+**Edit as JSON** switches to the raw list described below, for copying
+lists around.
+
+**With the separate script**, click your userscript manager's toolbar icon,
+choose **"Edit command buttons"** from the script's menu, adjust the JSON
+and click **Save**. The button bar updates instantly.
 
 Each entry is an object with these fields:
 
@@ -132,10 +140,11 @@ Example:
 ]
 ```
 
-The editor validates your JSON before saving and shows an error if anything is
+The editor checks the list before saving and shows an error if anything is
 malformed, so a typo won't break the bar. **Reset to defaults** reloads the
 built-in list into the editor (click **Save** to apply it). **Cancel**,
-Escape, or clicking outside the panel discards changes.
+Escape, or clicking outside the panel discards changes (the toolkit asks
+first).
 
 ### General and per-character buttons
 
@@ -144,10 +153,11 @@ then a thin divider and that character's **own buttons**, if it has any. Add
 a button to every character in one place, and give one character extras
 without copying the whole list.
 
-Open the editor while playing a character and pick what to edit:
-"Editing: ( ) general buttons ( ) *Name*'s own buttons". The own list can be
-empty (**Clear**, then **Save**). If a character's own button runs the same
-command as a general one, only the general one shows.
+Open the editor while playing a character and pick a tab: **General
+buttons** or ***Name*'s own**. The own tab's preview shows the general
+buttons faded in front of that character's, as on the bar. The own list can
+be empty (**Clear all**, then **Save**). If a character's own button runs the
+same command as a general one, only the general one shows.
 
 Upgrading from the older setup, where a character's own list *replaced* the
 shared one, is automatic: each old own list is checked once, buttons the

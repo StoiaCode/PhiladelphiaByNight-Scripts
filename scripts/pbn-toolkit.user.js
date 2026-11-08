@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.15.0
+// @version      1.16.0
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.15.0';
+  const TK_VERSION = '1.16.0';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -646,7 +646,62 @@
         }
         .pbn-cmd-editor__json:focus { outline: none; border-color: #9e2b2b; }
         .pbn-cmd-editor__msg { min-height: 20px; margin: 8px 0; white-space: pre-wrap; }
-        .pbn-cmd-editor__row { display: flex; gap: 8px; align-items: center; }
+        .pbn-cmd-editor__row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .pbn-cmd-editor__panel.pbn-cmd-ed { width: min(760px, 94vw); max-height: 90vh; display: flex; flex-direction: column; padding: 18px 20px; font-size: 1rem; }
+        .pbn-cmd-ed__tabs { display: flex; gap: 4px; margin-bottom: 8px; border-bottom: 1px solid #5a1212; }
+        .pbn-cmd-ed__tab {
+          padding: 7px 16px; margin-bottom: -1px; cursor: pointer; background: none; border: 1px solid transparent; border-radius: 5px 5px 0 0;
+          color: #9a8a7a; font: inherit; font-size: 1.05rem;
+        }
+        .pbn-cmd-ed__tab:hover { color: #e8ddd0; }
+        .pbn-cmd-ed__tab[aria-selected="true"] { color: #f3e6cf; background: #1c0f0f; border-color: #5a1212; border-bottom-color: #1c0f0f; }
+        .pbn-cmd-ed__label-sm { color: #9a8a7a; font-size: .8rem; letter-spacing: .8px; text-transform: uppercase; margin: 4px 0 6px; }
+        .pbn-cmd-ed__preview {
+          display: flex; flex-wrap: wrap; gap: 5px; align-items: center; min-height: 34px; padding: 8px; margin-bottom: 12px;
+          background: #0d0707; border: 1px solid #5a121266; border-radius: 5px;
+        }
+        .pbn-cmd-ed__preview .pbn-cmd-btn { cursor: pointer; }
+        .pbn-cmd-ed__preview .pbn-cmd-ed__dim { opacity: .45; cursor: default; }
+        .pbn-cmd-ed__preview-empty { color: #9a8a7a; font-style: italic; padding: 0 4px; }
+        .pbn-cmd-ed > * { flex-shrink: 0; }
+        .pbn-cmd-ed__list { flex: 1 1 auto; flex-shrink: 1; min-height: 80px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 2px 2px 6px; }
+        .pbn-cmd-ed__item {
+          display: grid; grid-template-columns: auto minmax(7em, 10em) minmax(8em, 1fr) auto auto; gap: 6px 8px; align-items: center;
+          padding: 8px 10px; background: #1c0f0f; border: 1px solid #5a121299; border-radius: 6px;
+        }
+        .pbn-cmd-ed__item.pbn-cmd-ed--over { border-color: #e0b84a; }
+        .pbn-cmd-ed__item.pbn-cmd-ed--dragging { opacity: .4; }
+        .pbn-cmd-ed__grip { cursor: grab; color: #9a8a7a; font-size: 1.2rem; padding: 0 2px; user-select: none; }
+        .pbn-cmd-ed__item input, .pbn-cmd-ed__item select {
+          min-width: 0; box-sizing: border-box; padding: 6px 9px; background: #0d0707; color: #e8ddd0;
+          border: 1px solid #5a1212; border-radius: 4px; font: inherit; font-size: 1rem;
+        }
+        .pbn-cmd-ed__item input:focus, .pbn-cmd-ed__item select:focus { outline: none; border-color: #e0b84a; }
+        .pbn-cmd-ed__item .pbn-cmd-ed__cmd { font-family: 'Courier New', monospace; }
+        .pbn-cmd-ed__item input.pbn-cmd-ed--bad { border-color: #f0906a; }
+        .pbn-cmd-ed__then-row { grid-column: 2 / -1; display: flex; align-items: center; gap: 8px; color: #9a8a7a; font-size: .95rem; }
+        .pbn-cmd-ed__then-row[hidden] { display: none; }
+        .pbn-cmd-ed__then-row input { flex: 1 1 auto; font-family: 'Courier New', monospace; }
+        .pbn-cmd-ed__tools { display: flex; gap: 2px; }
+        .pbn-cmd-ed__icon {
+          padding: 4px 8px; cursor: pointer; background: none; border: 0; border-radius: 4px; color: #9a8a7a; font: inherit; font-size: 1rem;
+        }
+        .pbn-cmd-ed__icon:hover:not(:disabled) { color: #e8ddd0; background: #5a121233; }
+        .pbn-cmd-ed__icon:disabled { opacity: .3; cursor: default; }
+        .pbn-cmd-ed__icon.pbn-cmd-ed__del:hover { color: #f0906a; }
+        .pbn-cmd-ed__add {
+          align-self: flex-start; margin: 6px 0 2px; padding: 7px 16px; cursor: pointer; background: none;
+          border: 1px dashed #9e2b2b; border-radius: 6px; color: #c4b49a; font: inherit; font-size: 1rem;
+        }
+        .pbn-cmd-ed__add:hover { color: #f3e6cf; background: #5a121233; }
+        .pbn-cmd-ed .pbn-cmd-editor__json { flex: 1 1 auto; flex-shrink: 1; height: 320px; }
+        .pbn-cmd-ed .pbn-cmd-editor__msg { margin: 8px 0 4px; }
+        @media (max-width: 640px) {
+          .pbn-cmd-ed__item { grid-template-columns: auto 1fr auto; }
+          .pbn-cmd-ed__item .pbn-cmd-ed__cmd, .pbn-cmd-ed__item select { grid-column: 2 / 3; }
+          .pbn-cmd-ed__then-row { grid-column: 2 / -1; }
+        }
+        .pbn-cmd-btn.pbn-cmd-edit { padding: 4px 8px; color: #9a8a7a; border-style: dashed; }
       `);
 
       // Buttons that send (submit, expand) fire their own command and leave
@@ -768,78 +823,214 @@
             bar.append(b);
           }
         });
+        const edit = c.el('button', { type: 'button', className: 'pbn-cmd-btn pbn-cmd-edit', textContent: '✎', title: 'Edit these buttons' });
+        edit.setAttribute('aria-label', 'Edit command buttons');
+        edit.addEventListener('mousedown', e => e.preventDefault());
+        edit.addEventListener('click', () => CMD.openEditor());
+        bar.append(edit);
         const anchor = input.closest('.q-field') || input.parentElement || input;
         anchor.parentElement.insertBefore(bar, anchor);
       }
       const rerender = () => { document.getElementById(CMD.BAR_ID)?.remove(); mount(); };
 
-      // Editor: the general list or the current character's own buttons.
+      // Editor: the general list or the current character's own buttons, one
+      // row per button (or the raw JSON behind a toggle).
+      const MODES = [['paste', 'Paste into the box'], ['send', 'Send right away'], ['ask', 'Ask for text, then send']];
+      const toRows = list => list.map(x => ({ label: x.label, cmd: x.cmd, mode: x.submit ? 'send' : x.expand ? 'ask' : 'paste', then: x.then || '' }));
+      const fromRows = rows => rows.filter(r => r.label.trim() || r.cmd.trim()).map(r => {
+        const o = { label: r.label.trim(), cmd: r.cmd.trim() };
+        if (r.mode === 'send') o.submit = true;
+        if (r.mode === 'ask') o.expand = true;
+        if (r.mode !== 'paste' && r.then.trim()) o.then = r.then.trim();
+        return o;
+      });
+      const describe = r => ({ paste: 'Pastes ', send: 'Sends ', ask: 'Asks for text, then sends ' }[r.mode]) + (r.cmd.trim() || '…')
+        + (r.mode !== 'paste' && r.then.trim() ? ', then ' + r.then.trim() + ' 3 s later' : '');
       CMD.openEditor = function openEditor() {
         if (document.getElementById(CMD.EDITOR_ID)) return;
         const name = c.getCharName();
-        let scope = 'shared';
-        const drafts = {
-          shared: JSON.stringify(loadShared(), null, 2),
-          own: JSON.stringify(extrasFor(name), null, 2),
-        };
+        let scope = 'shared', json = false, dragFrom = null;
+        const drafts = { shared: toRows(loadShared()), own: toRows(extrasFor(name)) };
+        const saved = { shared: JSON.stringify(fromRows(drafts.shared)), own: JSON.stringify(fromRows(drafts.own)) };
+        const el = c.el;
 
-        const overlay = c.el('div', { id: CMD.EDITOR_ID });
-        const panel = c.el('div', { className: 'pbn-cmd-editor__panel' });
-        const heading = c.el('div', { className: 'pbn-cmd-editor__heading', textContent: name ? `Edit command buttons — ${name}` : 'Edit command buttons' });
-        const note = c.el('div', { className: 'pbn-cmd-editor__note' });
-        const ta = c.el('textarea', { className: 'pbn-cmd-editor__json', spellcheck: false, value: drafts[scope] });
-        const renderNote = () => {
+        const overlay = el('div', { id: CMD.EDITOR_ID });
+        const panel = el('div', { className: 'pbn-cmd-editor__panel pbn-cmd-ed' });
+        panel.setAttribute('role', 'dialog');
+        panel.setAttribute('aria-label', 'Edit command buttons');
+        const heading = el('div', { className: 'pbn-cmd-editor__heading', textContent: 'Command buttons' });
+        const tabs = el('div', { className: 'pbn-cmd-ed__tabs' });
+        tabs.setAttribute('role', 'tablist');
+        const note = el('div', { className: 'pbn-cmd-editor__note' });
+        const preview = el('div', { className: 'pbn-cmd-ed__preview' });
+        const list = el('div', { className: 'pbn-cmd-ed__list' });
+        const add = el('button', { type: 'button', className: 'pbn-cmd-ed__add', textContent: '+ Add a button' });
+        const ta = el('textarea', { className: 'pbn-cmd-editor__json', spellcheck: false, hidden: true });
+        const msg = el('div', { className: 'pbn-cmd-editor__msg' });
+        const say = (t, ok) => { msg.style.color = ok ? '#6bdb7e' : '#f0906a'; msg.textContent = t; };
+        const btn = (t, primary) => el('button', { type: 'button', className: primary ? 'pbn-cmd-btn pbn-cmd-btn--primary' : 'pbn-cmd-btn', textContent: t });
+        const resetBtn = btn('Reset to defaults'), jsonBtn = btn('Edit as JSON'), cancelBtn = btn('Cancel'), saveBtn = btn('Save', true);
+        const footer = el('div', { className: 'pbn-cmd-editor__row' }, resetBtn, jsonBtn, el('div', { style: 'flex:1 1 auto' }), cancelBtn, saveBtn);
+        const tabBtns = {};
+        if (name) {
+          for (const [value, text] of [['shared', 'General buttons'], ['own', name + '’s own']]) {
+            const t = el('button', { type: 'button', className: 'pbn-cmd-ed__tab', textContent: text });
+            t.setAttribute('role', 'tab');
+            t.addEventListener('click', () => switchScope(value));
+            tabBtns[value] = t;
+            tabs.append(t);
+          }
+        }
+        panel.append(heading, name ? tabs : '', note, el('div', { className: 'pbn-cmd-ed__label-sm', textContent: 'Preview' }), preview, list, add, ta, msg, footer);
+        overlay.append(panel);
+
+        function renderNote() {
           if (!name) note.textContent = 'No character detected, so this edits the general buttons every character sees. Open it from the play page to give a character buttons of its own.';
           else if (scope === 'shared') note.textContent = 'Every character sees these.';
-          else note.textContent = `Only ${name} sees these, after the general ones. Leave the list empty ([]) for none.`;
-          resetBtn.textContent = scope === 'own' ? 'Clear' : 'Reset to defaults';
-        };
-        panel.append(heading);
-        if (name) {
-          const scopeRow = c.el('div', { className: 'pbn-cmd-editor__scope' }, 'Editing:');
-          [['shared', 'general buttons'], ['own', `${name}'s own buttons`]].forEach(([value, text]) => {
-            const radio = c.el('input', { type: 'radio', name: 'pbn-cmd-scope', value, checked: value === scope });
-            radio.addEventListener('change', () => { drafts[scope] = ta.value; scope = value; ta.value = drafts[scope]; msg.textContent = ''; renderNote(); });
-            scopeRow.append(c.el('label', {}, radio, text));
-          });
-          panel.append(scopeRow);
+          else note.textContent = 'Only ' + name + ' sees these, after the general ones (shown faded in the preview).';
+          resetBtn.textContent = scope === 'own' ? 'Clear all' : 'Reset to defaults';
+          for (const [v, t] of Object.entries(tabBtns)) t.setAttribute('aria-selected', String(v === scope));
         }
-        const help = c.el('div', { className: 'pbn-cmd-editor__help' });
-        help.innerHTML = 'One entry per button. Each needs <code>"label"</code> (button text) and <code>"cmd"</code> (what gets pasted). ' +
-          'Optional: <code>"submit": true</code> sends immediately, or <code>"expand": true</code> opens an input field first; both leave what you were typing in the box. ' +
-          'With either, <code>"then": "/another command"</code> sends one more command 3 seconds later (click the button again to cancel it).';
-        const msg = c.el('div', { className: 'pbn-cmd-editor__msg' });
-        const showError = t => { msg.style.color = '#f0906a'; msg.textContent = t; };
-        const btn = (t, primary) => c.el('button', { type: 'button', className: primary ? 'pbn-cmd-btn pbn-cmd-btn--primary' : 'pbn-cmd-btn', textContent: t });
-        const resetBtn = btn('Reset to defaults'), cancelBtn = btn('Cancel'), saveBtn = btn('Save', true);
-        const row = c.el('div', { className: 'pbn-cmd-editor__row' }, resetBtn, c.el('div', { style: 'flex:1 1 auto' }), cancelBtn, saveBtn);
-        panel.append(note, help, ta, msg, row);
-        overlay.append(panel);
-        renderNote();
+        function renderPreview() {
+          preview.textContent = '';
+          const show = (rows, dim) => rows.forEach((r, i) => {
+            if (!r.label.trim()) return;
+            const b = el('span', { className: 'pbn-cmd-btn' + (dim ? ' pbn-cmd-ed__dim' : ''), textContent: r.label.trim(), title: describe(r) });
+            if (!dim) b.addEventListener('click', () => list.children[i]?.querySelector('input')?.focus());
+            preview.append(b);
+          });
+          if (scope === 'own') { show(drafts.shared, true); if (drafts.own.some(r => r.label.trim())) preview.append(el('span', { className: 'pbn-cmd-sep' })); }
+          show(drafts[scope], false);
+          if (!preview.children.length) preview.append(el('span', { className: 'pbn-cmd-ed__preview-empty', textContent: 'No buttons yet' }));
+        }
+        function move(from, to) {
+          const rows = drafts[scope];
+          if (to < 0 || to >= rows.length || from === to) return;
+          rows.splice(to, 0, rows.splice(from, 1)[0]);
+          renderList();
+          list.children[to]?.querySelector('.pbn-cmd-ed__grip')?.scrollIntoView({ block: 'nearest' });
+        }
+        function renderList() {
+          list.textContent = '';
+          const rows = drafts[scope];
+          rows.forEach((r, i) => {
+            const grip = el('span', { className: 'pbn-cmd-ed__grip', textContent: '⠿', title: 'Drag to move' });
+            const label = el('input', { type: 'text', value: r.label, placeholder: 'Label', maxLength: 30, spellcheck: false });
+            label.setAttribute('aria-label', 'Button label');
+            const cmd = el('input', { type: 'text', className: 'pbn-cmd-ed__cmd', value: r.cmd, placeholder: '/command', spellcheck: false });
+            cmd.setAttribute('aria-label', 'Command');
+            const mode = el('select', {}, ...MODES.map(([v, t]) => el('option', { value: v, textContent: t, selected: v === r.mode })));
+            mode.setAttribute('aria-label', 'What the button does');
+            const icon = (t, title, fn, cls = '') => {
+              const b = el('button', { type: 'button', className: 'pbn-cmd-ed__icon ' + cls, textContent: t, title });
+              b.setAttribute('aria-label', title);
+              b.addEventListener('click', fn);
+              return b;
+            };
+            const up = icon('▲', 'Move up', () => move(i, i - 1)), down = icon('▼', 'Move down', () => move(i, i + 1));
+            up.disabled = i === 0;
+            down.disabled = i === rows.length - 1;
+            const del = icon('✕', 'Delete this button', () => { rows.splice(i, 1); renderList(); renderPreview(); }, 'pbn-cmd-ed__del');
+            const then = el('input', { type: 'text', value: r.then, placeholder: '/another command (optional)', spellcheck: false });
+            then.setAttribute('aria-label', 'Follow-up command');
+            const thenRow = el('label', { className: 'pbn-cmd-ed__then-row', hidden: r.mode === 'paste' }, 'then, 3 s later:', then);
+            const item = el('div', { className: 'pbn-cmd-ed__item' }, grip, label, cmd, mode, el('div', { className: 'pbn-cmd-ed__tools' }, up, down, del), thenRow);
+            const check = () => {
+              label.classList.toggle('pbn-cmd-ed--bad', !r.label.trim() && !!r.cmd.trim());
+              cmd.classList.toggle('pbn-cmd-ed--bad', !!r.label.trim() && !r.cmd.trim());
+            };
+            label.addEventListener('input', () => { r.label = label.value; check(); renderPreview(); });
+            cmd.addEventListener('input', () => { r.cmd = cmd.value; check(); renderPreview(); });
+            then.addEventListener('input', () => { r.then = then.value; renderPreview(); });
+            mode.addEventListener('change', () => { r.mode = mode.value; thenRow.hidden = r.mode === 'paste'; renderPreview(); });
+            // Dragging starts from the grip only, so text in the fields stays selectable.
+            grip.addEventListener('mousedown', () => { item.draggable = true; });
+            item.addEventListener('dragstart', e => { dragFrom = i; item.classList.add('pbn-cmd-ed--dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i)); });
+            item.addEventListener('dragend', () => { item.draggable = false; item.classList.remove('pbn-cmd-ed--dragging'); list.querySelectorAll('.pbn-cmd-ed--over').forEach(n => n.classList.remove('pbn-cmd-ed--over')); dragFrom = null; });
+            item.addEventListener('dragover', e => { if (dragFrom === null) return; e.preventDefault(); item.classList.add('pbn-cmd-ed--over'); });
+            item.addEventListener('dragleave', () => item.classList.remove('pbn-cmd-ed--over'));
+            item.addEventListener('drop', e => { e.preventDefault(); if (dragFrom !== null) move(dragFrom, i); });
+            check();
+            list.append(item);
+          });
+        }
+        function renderAll() { renderNote(); renderPreview(); renderList(); }
 
-        function close() { document.removeEventListener('keydown', onKey, true); overlay.remove(); }
-        function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); close(); } }
-        resetBtn.addEventListener('click', () => {
-          ta.value = scope === 'own' ? '[]' : JSON.stringify(defaultsCopy(), null, 2);
-          msg.style.color = '#6bdb7e'; msg.textContent = (scope === 'own' ? 'Cleared' : 'Defaults loaded') + ' — click Save to apply.';
-        });
-        cancelBtn.addEventListener('click', close);
-        overlay.addEventListener('mousedown', e => { if (e.target === overlay) close(); });
-        saveBtn.addEventListener('click', () => {
+        // JSON view: the same list as text; leaving it (or saving) parses it back.
+        function readJson() {
           let parsed;
-          try { parsed = JSON.parse(ta.value); } catch (e) { showError('Invalid JSON: ' + e.message); return; }
-          if (!validate(parsed)) { showError('Each entry needs a non-empty "label" and "cmd". "submit"/"expand" must be true or false if present. "then" must be one command (text), on a button with "submit" or "expand".'); return; }
-          if (name && scope === 'own') {
+          try { parsed = JSON.parse(ta.value); } catch (e) { say('Invalid JSON: ' + e.message); return false; }
+          if (!validate(parsed)) { say('Each entry needs a non-empty "label" and "cmd". "submit"/"expand" must be true or false if present. "then" must be one command (text), on a button with "submit" or "expand".'); return false; }
+          drafts[scope] = toRows(parsed);
+          return true;
+        }
+        function setJson(on) {
+          if (!on && !readJson()) return false;
+          json = on;
+          if (on) ta.value = JSON.stringify(fromRows(drafts[scope]), null, 2);
+          ta.hidden = !on;
+          list.hidden = add.hidden = on;
+          jsonBtn.textContent = on ? 'Back to the list' : 'Edit as JSON';
+          msg.textContent = '';
+          renderAll();
+          return true;
+        }
+        function switchScope(v) {
+          if (v === scope) return;
+          if (json && !readJson()) return;
+          scope = v;
+          if (json) ta.value = JSON.stringify(fromRows(drafts[scope]), null, 2);
+          msg.textContent = '';
+          renderAll();
+        }
+        const changed = () => ['shared', 'own'].some(k => JSON.stringify(fromRows(drafts[k])) !== saved[k]);
+        function close(ask) {
+          if (ask && json) readJson();
+          if (ask && changed() && !confirm('Discard your changes to the buttons?')) return;
+          document.removeEventListener('keydown', onKey, true);
+          overlay.remove();
+        }
+        function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(true); } }
+
+        add.addEventListener('click', () => {
+          drafts[scope].push({ label: '', cmd: '', mode: 'paste', then: '' });
+          renderList();
+          list.lastElementChild?.querySelector('input')?.focus();
+          list.lastElementChild?.scrollIntoView({ block: 'nearest' });
+        });
+        resetBtn.addEventListener('click', () => {
+          drafts[scope] = scope === 'own' ? [] : toRows(defaultsCopy());
+          if (json) ta.value = JSON.stringify(fromRows(drafts[scope]), null, 2);
+          renderAll();
+          say((scope === 'own' ? 'Cleared' : 'Defaults loaded') + ' — click Save to apply.', true);
+        });
+        jsonBtn.addEventListener('click', () => setJson(!json));
+        cancelBtn.addEventListener('click', () => close(true));
+        overlay.addEventListener('mousedown', e => { if (e.target === overlay) close(true); });
+        saveBtn.addEventListener('click', () => {
+          if (json && !readJson()) return;
+          for (const k of ['shared', 'own']) {
+            const bad = drafts[k].findIndex(r => !r.label.trim() !== !r.cmd.trim());
+            if (bad < 0) continue;
+            if (k !== scope) switchScope(k);
+            say('Button ' + (bad + 1) + (k === 'own' ? ' of ' + name + '’s own' : '') + ' needs both a label and a command (or clear both to drop it).');
+            list.children[bad]?.querySelector('.pbn-cmd-ed--bad')?.focus();
+            return;
+          }
+          saveShared(fromRows(drafts.shared));
+          if (name) {
             const map = loadExtras();
-            if (parsed.length) map[name] = parsed; else delete map[name];
+            const own = fromRows(drafts.own);
+            if (own.length) map[name] = own; else delete map[name];
             saveExtras(map);
-          } else saveShared(parsed);
+          }
           rerender();
-          close();
+          close(false);
         });
         document.addEventListener('keydown', onKey, true);
         document.body.append(overlay);
-        ta.focus();
+        renderAll();
+        list.querySelector('input')?.focus();
       };
 
       let observer = null;
