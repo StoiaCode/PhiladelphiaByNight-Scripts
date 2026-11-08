@@ -36,14 +36,17 @@ press **Alt+Shift+T** anywhere on the site).
   stores — useful because it's kept in this browser's site storage, which
   clearing the site's data would wipe.
 
-New features are added to the toolkit, and some exist only there (see
-[Personal Names, Notes & Dossiers](#personal-names-notes--dossiers-toolkit-only)).
+New features only go into the toolkit, and several exist only there:
+[Personal Names, Notes & Dossiers](#personal-names-notes--dossiers-toolkit-only),
+[Roll Log](#roll-log-toolkit-only), [Reminders](#reminders-toolkit-only),
+[24-Hour Clock & Celsius](#24-hour-clock--celsius-toolkit-only-off-by-default),
+and parts of the others (marked *toolkit only* below).
 
 ### The separate scripts
 
-These still work and still get fixes, so there's no need to switch if
-they're doing what you want. Each one stands down by itself if the toolkit
-is installed with that feature switched on.
+These still work, but they no longer get new features; use the toolkit for
+those. Each one stands down by itself if the toolkit is installed with that
+feature switched on.
 
 | Script | Install |
 | ------ | ------- |
@@ -56,6 +59,12 @@ is installed with that feature switched on.
 | Character Cards | [`pbn-character-cards.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-character-cards.user.js) |
 | Description Presets | [`pbn-desc-presets.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-desc-presets.user.js) |
 | Language Switcher | [`pbn-speak.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-speak.user.js) |
+
+### Separate tool: Roll Sampler
+
+**[`pbn-roll-sampler.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-roll-sampler.user.js)**
+isn't part of the toolkit and is installed on its own. See
+[PbN Roll Sampler](#pbn-roll-sampler).
 
 Each script declares `@updateURL`/`@downloadURL`, so your manager will pull
 updates automatically when this repo changes. After installing, reload any
@@ -87,12 +96,13 @@ Buttons behave in one of three ways, depending on how each command is configured
 ### Editing the command list (no script editing)
 
 You can change which buttons appear — and what they do — entirely in the
-browser. Edits are saved permanently by your userscript manager and survive
-reloads and browser restarts.
+browser. Edits are saved permanently and survive reloads and browser restarts.
 
-1. Click your userscript manager's toolbar icon (Violentmonkey/Tampermonkey).
-2. Choose **"Edit command buttons"** from the script's menu.
-3. A JSON editor opens. Adjust the list and click **Save** — the button bar
+1. In the toolkit: open the toolkit panel and click **Edit buttons…** under
+   Command Buttons. With the separate script: click your userscript
+   manager's toolbar icon and choose **"Edit command buttons"** from the
+   script's menu.
+2. A JSON editor opens. Adjust the list and click **Save** — the button bar
    updates instantly.
 
 Each entry is an object with these fields:
@@ -163,7 +173,8 @@ shared list or its own.
 
 ### Advanced (in-script) options
 
-A couple of settings still live at the top of the script for power users:
+In the toolkit, the swapping below is a switch in the panel. The separate
+script keeps a couple of settings at the top of the script for power users:
 
 - `INPUT_SELECTOR` — leave `''` for auto-detection of the command box. If
   auto-detect picks the wrong field, set a CSS selector here (e.g.
@@ -188,7 +199,8 @@ top of the script:
 - `GAP` — gap in pixels between the indicator and the top of the input
   (default `4`).
 
-To change these, edit the script in your userscript manager's dashboard.
+To change these, edit the script in your userscript manager's dashboard. In
+the toolkit both are settings in the panel instead.
 
 ---
 
@@ -249,7 +261,7 @@ Words you'd rather not read can be censored: they show with only their first and
 
 It applies to the chat and to the looks shown in dossiers. It's display only: saved looks keep the real text, so taking a word off the list brings it back, and **Save Log** writes the game's text unchanged.
 
-This script has no configurable options.
+The separate script has no configurable options. In the toolkit, Search, Hide and the Newest messages button can each be switched off in the panel, and the word filter is set there.
 
 ---
 
@@ -371,7 +383,7 @@ The list is stored per browser/device. This script has no configurable options.
 
 ## Personal Names, Notes & Dossiers (toolkit only)
 
-Give people your own names. Someone you only know as *"a man in a grey coat"* introduces himself as John: click his short desc in the chat, type the name, and from then on he shows up as **John** wherever the game names him. If he re-introduces himself as "the Count" next week, click again and rename him.
+Give people your own names. Someone you only know as *"a man in a grey coat"* introduces himself as John: click his short desc in the chat, click **Name · link…** in his dossier (or right-click him and pick **Name, link, notes…**), type the name, and from then on he shows up as **John** wherever the game names him. If he re-introduces himself as "the Count" next week, rename him the same way.
 
 - **Where it applies** — only where the game puts a name, never in what people say:
   - the speaker of says and emotes
@@ -393,9 +405,11 @@ Give people your own names. Someone you only know as *"a man in a grey coat"* in
 
 - your name for them and their other appearances (with a **Name · link…** button for renaming and "Same person as…"),
 - **Colour** sets the colour of their name in your chat with the game's `/color` (see the right-click menu below),
-- **Look** sends `/look` at them right away (the new look replaces the saved one), and **Whisper** starts `/whisper <them> ` in the command box for you to finish. A line you had already typed (not a command) becomes the whisper's message. Both use whatever the game showed them as most recently, since anyone in the room can be named by their description,
+- **Look** sends `/look` at them right away (the new look replaces the saved one), and **Whisper** starts `/whisper <them> ` in the command box for you to finish. A line you had already typed (not a command) becomes the whisper's message. Both use the name or desc you last clicked or looked at for that person (anyone in the room can be named by their description), so after a reintroduction, clicking their new name switches the buttons over,
 - your notes on them, editable right there,
 - **their look**: the last `/look` you did on them, with the time you saw it. Links in it (people often put image links in their descs) are clickable and open in a new tab.
+
+**Your own dossier.** `/look me` ("You look at yourself.") gets a dossier too, headed with your character's name and "yourself" underneath. Its Look and Whisper buttons use `me`, and it's never suggested as the same person as anyone else.
 
 When you `/look` at someone, the look is saved (replacing the previous one for that person) and their dossier opens. In the chat the whole description folds into one line, **You look at Jane Doe · Dossier · Show here**, so it doesn't bury the scene; **Show here** unfolds that one. NPCs get dossiers too.
 
@@ -445,7 +459,15 @@ Keeps running statistics of your own rolls, per character, without storing dates
 
 Open it with **Roll log** in the toolkit's section of the in-game **Settings** tab (or *Open roll log…* in the toolkit panel). Each line shows your numbers next to the exact V20 odds for that pool and difficulty, in brackets; a value turns red or green once it's clearly worse or better than that over 10+ rolls. **Reset this character** clears that character's log.
 
-Only rolls made while the page is open count, so reloading or reconnecting doesn't count old rolls twice. Other players' rolls are ignored. The expected values assume no specialty and no Willpower.
+Only rolls made while the page is open count, so reloading or reconnecting doesn't count old rolls twice. Other players' rolls are ignored, and so are the test rolls of the [Roll Sampler](#pbn-roll-sampler). The expected values assume no specialty and no Willpower.
+
+---
+
+## PbN Roll Sampler
+
+A separate script, not part of the toolkit. It adds **Roll × N (private)** and a number field to the game's **Roll Dice** dialog: set up a roll (attribute, ability or virtue, difficulty, specialty), choose how many times, and it rolls that setup N times (up to 1000) as **private** rolls, with Willpower always off.
+
+A panel in the bottom-right corner fills in as the results come back: average successes, the chance of at least one success, and how often each result came up (botch, failure, 1, 2, 3… successes), each next to the exact V20 odds. Below that, how often each die face showed up (10% each if the dice are fair). **Stop** ends the run early, **Copy** copies the results, **Close** hides the panel. If the game asks you to slow down, the sampler waits and carries on. The count you last used is remembered.
 
 ---
 
@@ -464,6 +486,8 @@ The window shows the game time now, and every reminder's next time in both clock
 When one comes due, a banner appears at the top of the page with **Done** (or **Done now**) and **Snooze 1h**, and the tab title gets a ⏰. Reminders only go off while a PbN page is open; anything that came due while it was closed shows up as soon as you open one. They're stored in this browser only.
 
 How game time is worked out: one game night, 6:00 PM to 6:00 AM, runs over one real day at half speed. It starts at 16:00 CET (UTC+1 all year round, no summer time), so 1:00 AM game time is 06:00 CET, shown in your own time zone.
+
+---
 
 ## 24-Hour Clock & Celsius (toolkit only, off by default)
 
