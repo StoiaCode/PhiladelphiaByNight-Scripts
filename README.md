@@ -60,12 +60,6 @@ feature switched on.
 | Description Presets | [`pbn-desc-presets.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-desc-presets.user.js) |
 | Language Switcher | [`pbn-speak.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-speak.user.js) |
 
-### Separate tool: Roll Sampler
-
-**[`pbn-roll-sampler.user.js`](https://github.com/stoiacode/philadelphiabynight-scripts/raw/main/scripts/pbn-roll-sampler.user.js)**
-isn't part of the toolkit and is installed on its own. See
-[PbN Roll Sampler](#pbn-roll-sampler).
-
 Each script declares `@updateURL`/`@downloadURL`, so your manager will pull
 updates automatically when this repo changes. After installing, reload any
 open Philadelphia by Night tab.
@@ -459,15 +453,7 @@ Keeps running statistics of your own rolls, per character, without storing dates
 
 Open it with **Roll log** in the toolkit's section of the in-game **Settings** tab (or *Open roll log…* in the toolkit panel). Each line shows your numbers next to the exact V20 odds for that pool and difficulty, in brackets; a value turns red or green once it's clearly worse or better than that over 10+ rolls. **Reset this character** clears that character's log.
 
-Only rolls made while the page is open count, so reloading or reconnecting doesn't count old rolls twice. Other players' rolls are ignored, and so are the test rolls of the [Roll Sampler](#pbn-roll-sampler). The expected values assume no specialty and no Willpower.
-
----
-
-## PbN Roll Sampler
-
-A separate script, not part of the toolkit. It adds **Roll × N (private)** and a number field to the game's **Roll Dice** dialog: set up a roll (attribute, ability or virtue, difficulty, specialty), choose how many times, and it rolls that setup N times (up to 1000) as **private** rolls, with Willpower always off.
-
-A panel in the bottom-right corner fills in as the results come back: average successes, the chance of at least one success, and how often each result came up (botch, failure, 1, 2, 3… successes), each next to the exact V20 odds. Below that, how often each die face showed up (10% each if the dice are fair). **Stop** ends the run early, **Copy** copies the results, **Close** hides the panel. If the game asks you to slow down, the sampler waits and carries on. The count you last used is remembered.
+Only rolls made while the page is open count, so reloading or reconnecting doesn't count old rolls twice. Other players' rolls are ignored. The expected values assume no specialty and no Willpower.
 
 ---
 
