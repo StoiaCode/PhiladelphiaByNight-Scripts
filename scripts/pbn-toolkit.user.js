@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.17.2
+// @version      1.17.3
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.17.2';
+  const TK_VERSION = '1.17.3';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -2980,11 +2980,28 @@
       const SHOT_SUBJECT = /^(?!you\b|someone\b|nobody\b)(.+?) (?:arrives|leaves|departs|enters|exits|heads|walks|runs|climbs|steps|slips|emerges|appears|disappears|vanishes|fades|wanders|moves|goes|comes|looks|whispers|stands|sits|lies|falls|rises|wakes|has entered|is)\b/;
       const ROOM_TAG = 'span.text-amber-6';
       // Your own character's name anywhere in the chat text (people saying
-      // it, too): the full name and each part of it, as whole words.
+      // it, too): the full name and each part of it, as whole words. Also the
+      // name of a borrowed face ("To others, you are still Jane Doe.").
+      const myAliases = new Set();
+      const ALIAS_RE = /\bTo others, you are (?:still |now )?(.+?)\.\s*$/;
+      function scanAliases(root) {
+        let found = false;
+        root.querySelectorAll('p > span.text-orange-9:first-child').forEach(label => {
+          if (label.textContent.trim() !== '[SYSTEM]') return;
+          const m = label.parentElement.textContent.match(ALIAS_RE);
+          const name = m && m[1].trim();
+          if (name && !myAliases.has(name)) { myAliases.add(name); found = true; }
+        });
+        return found;
+      }
       function myNameRe() {
-        if (!bookChar || bookChar === 'default') return null;
+        // The journal can show a different name than the game's character data (a borrowed face).
+        const journal = document.querySelector('.journal-title')?.textContent.trim().match(/^(.+?)['’]s Journal$/)?.[1];
+        const names = [...new Set([...(bookChar && bookChar !== 'default' ? [bookChar] : []), ...(journal ? [journal] : []), ...myAliases])];
+        if (!names.length) return null;
         const esc = w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const parts = [bookChar, ...bookChar.split(/\s+/).filter(w => w.length >= 3)].map(esc);
+        const parts = [...new Set(names.flatMap(n => [n, ...n.split(/[\s-]+/).filter(w => w.length >= 3)]))]
+          .sort((a, b) => b.length - a.length).map(esc);
         return new RegExp(`(?<![\\p{L}\\p{N}])(?:${parts.join('|')})(?![\\p{L}\\p{N}])`, 'giu');
       }
       function hideRooms(root) {
@@ -3057,7 +3074,7 @@
           const cont = document.querySelector(CHAT);
           if (cont) process(cont); // wrap names only screenshot mode finds, before colouring
           cont?.querySelectorAll('.' + NM).forEach(sp => anonFor(sp.dataset.pbnNmOrig)); // colours in reading order
-          if (cont) hideRooms(cont);
+          if (cont) { scanAliases(cont); hideRooms(cont); }
         } else showRooms();
         refreshAll();
         shotToast?.remove();
@@ -3127,7 +3144,11 @@
       function processRow(row, live = false) {
         process(row);
         row.querySelectorAll('.' + NM).forEach(s => render(s));
-        if (shot) { hideRooms(row); ensureCover(); }
+        if (shot) {
+          const cont = scanAliases(row) && document.querySelector(CHAT);
+          hideRooms(cont || row);
+          ensureCover();
+        }
         dossierScan(row, live);
       }
 
