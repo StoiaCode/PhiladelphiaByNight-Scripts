@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.17.3
+// @version      1.17.4
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.17.3';
+  const TK_VERSION = '1.17.4';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -2979,9 +2979,11 @@
       }
       const SHOT_SUBJECT = /^(?!you\b|someone\b|nobody\b)(.+?) (?:arrives|leaves|departs|enters|exits|heads|walks|runs|climbs|steps|slips|emerges|appears|disappears|vanishes|fades|wanders|moves|goes|comes|looks|whispers|stands|sits|lies|falls|rises|wakes|has entered|is)\b/;
       const ROOM_TAG = 'span.text-amber-6';
-      // Your own character's name anywhere in the chat text (people saying
-      // it, too): the full name and each part of it, as whole words. Also the
-      // name of a borrowed face ("To others, you are still Jane Doe.").
+      // Names anywhere in the chat text (people saying them, too), each
+      // replaced with that person's colour: the full name and each part of
+      // it, as whole words. Yours (character, journal, and a borrowed face:
+      // "To others, you are still Jane Doe.") and every game name seen this
+      // session or saved; short descs aren't matched inside text.
       const myAliases = new Set();
       const ALIAS_RE = /\bTo others, you are (?:still |now )?(.+?)\.\s*$/;
       function scanAliases(root) {
@@ -2994,15 +2996,28 @@
         });
         return found;
       }
-      function myNameRe() {
-        // The journal can show a different name than the game's character data (a borrowed face).
+      // Titles and particles aren't matched on their own.
+      const NOT_A_NAME = new Set(['the', 'and', 'von', 'van', 'der', 'den', 'del', 'della', 'des', 'mac', 'sir', 'lord', 'lady', 'dame',
+        'miss', 'mister', 'mrs', 'father', 'mother', 'sister', 'brother', 'doctor', 'saint', 'uncle', 'aunt']);
+      const looksLikeName = t => !/,/.test(t) && !isSelf(t) && t.split(/\s+/).length <= 4 && t.split(/\s+/).every(w => /^\p{Lu}/u.test(w));
+      function nameMatcher() {
+        const who = new Map(); // lowercased name or part -> whose; a colour is only given out once it shows up
+        const addName = (n, a) => {
+          for (const part of [n, ...n.split(/[\s-]+/).filter(w => w.length >= 3 && !NOT_A_NAME.has(w.toLowerCase()))]) {
+            if (!who.has(part.toLowerCase())) who.set(part.toLowerCase(), a);
+          }
+        };
+        // Yours first, so a shared first name stays yours. The journal can
+        // show another name than the game's character data (a borrowed face).
+        const me = bookChar;
         const journal = document.querySelector('.journal-title')?.textContent.trim().match(/^(.+?)['’]s Journal$/)?.[1];
-        const names = [...new Set([...(bookChar && bookChar !== 'default' ? [bookChar] : []), ...(journal ? [journal] : []), ...myAliases])];
-        if (!names.length) return null;
+        for (const n of [bookChar !== 'default' ? bookChar : null, journal, ...myAliases]) if (n) addName(n, me);
+        const others = [...seenNames.values(), ...Object.values(book).flatMap(x => x.looks), ...Object.values(looksFor()).map(v => v.orig).filter(Boolean)];
+        for (const n of others) if (looksLikeName(n) && !isMe(n)) addName(n, n);
+        if (!who.size) return null;
         const esc = w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const parts = [...new Set(names.flatMap(n => [n, ...n.split(/[\s-]+/).filter(w => w.length >= 3)]))]
-          .sort((a, b) => b.length - a.length).map(esc);
-        return new RegExp(`(?<![\\p{L}\\p{N}])(?:${parts.join('|')})(?![\\p{L}\\p{N}])`, 'giu');
+        const parts = [...who.keys()].sort((a, b) => b.length - a.length).map(esc);
+        return { re: new RegExp(`(?<![\\p{L}\\p{N}])(?:${parts.join('|')})(?![\\p{L}\\p{N}])`, 'giu'), who };
       }
       function hideRooms(root) {
         // "[LOCATION] You are in Some Place": everything after the label goes.
@@ -3020,9 +3035,10 @@
           t.dataset.pbnShotRoom = t.textContent;
           t.textContent = '[Location censored]';
         });
-        const re = myNameRe();
-        if (!re || !re.test(root.textContent)) return;
-        const me = anonFor(bookChar);
+        const matcher = nameMatcher();
+        if (!matcher) return;
+        const { re, who } = matcher;
+        if (!re.test(root.textContent)) return;
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
         const hits = [];
         for (let n = walker.nextNode(); n; n = walker.nextNode()) {
@@ -3035,9 +3051,10 @@
           let last = 0;
           re.lastIndex = 0;
           for (const m of t.matchAll(re)) {
-            const sp = c.el('span', { className: `pbn-shot-me ${NM}--anon`, textContent: me.label });
+            const a = anonFor(who.get(m[0].toLowerCase()));
+            const sp = c.el('span', { className: `pbn-shot-me ${NM}--anon`, textContent: a.label });
             sp.dataset.pbnShotMe = m[0];
-            sp.style.setProperty('--pbn-anon', me.color);
+            sp.style.setProperty('--pbn-anon', a.color);
             frag.append(t.slice(last, m.index), sp);
             last = m.index + m[0].length;
           }
