@@ -4,6 +4,44 @@ A small collection of userscripts that improve the [Philadelphia by Night](https
 web client. All scripts only run on `https://philadelphiabynight.net/*` and
 require no account or server-side setup.
 
+## Contents
+
+- [Installation](#installation)
+  - [Recommended: PbN Toolkit (everything in one)](#recommended-pbn-toolkit-everything-in-one)
+  - [The separate scripts](#the-separate-scripts)
+- [PbN Command Buttons](#pbn-command-buttons)
+  - [Using the buttons](#using-the-buttons)
+  - [Editing the command list (no script editing)](#editing-the-command-list-no-script-editing)
+  - [General and per-character buttons](#general-and-per-character-buttons)
+  - [Advanced (in-script) options](#advanced-in-script-options)
+- [PbN Typing Indicator De-Shift](#pbn-typing-indicator-de-shift)
+- [PbN Layout Lock](#pbn-layout-lock)
+- [PbN Chat Log](#pbn-chat-log)
+  - [Search](#search)
+  - [Hide](#hide)
+  - [Newest messages (toolkit only)](#newest-messages-toolkit-only)
+  - [Word filter (toolkit only)](#word-filter-toolkit-only)
+- [PbN Chat Timestamps](#pbn-chat-timestamps)
+- [PbN Compass Tools](#pbn-compass-tools)
+  - [Destination tooltips](#destination-tooltips)
+  - [Mode toggle](#mode-toggle)
+  - [Up / Down](#up--down)
+- [PbN Character Cards](#pbn-character-cards)
+- [PbN Description Presets](#pbn-description-presets)
+  - [Saving a preset](#saving-a-preset)
+  - [Switching in one click](#switching-in-one-click)
+- [PbN Language Switcher](#pbn-language-switcher)
+  - [Why you have to tell it your languages](#why-you-have-to-tell-it-your-languages)
+- [Personal Names, Notes & Dossiers (toolkit only)](#personal-names-notes--dossiers-toolkit-only)
+  - [Dossiers](#dossiers)
+  - [Right-click menu](#right-click-menu)
+  - [The name editor](#the-name-editor)
+  - [Screenshot mode](#screenshot-mode)
+- [Roll Log (toolkit only)](#roll-log-toolkit-only)
+- [Reminders (toolkit only)](#reminders-toolkit-only)
+- [24-Hour Clock & Celsius (toolkit only, off by default)](#24-hour-clock--celsius-toolkit-only-off-by-default)
+- [Updating](#updating)
+
 ## Requirements
 
 A userscript manager browser extension:
