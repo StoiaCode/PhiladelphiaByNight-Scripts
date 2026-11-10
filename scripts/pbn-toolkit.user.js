@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.17.0
+// @version      1.17.1
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.17.0';
+  const TK_VERSION = '1.17.1';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -2990,9 +2990,23 @@
         document.querySelectorAll('[data-pbn-shot-room]').forEach(t => { t.textContent = t.dataset.pbnShotRoom; delete t.dataset.pbnShotRoom; });
       }
       let shotToast = null;
+      // The room panel (with the Settings tab) is blurred and can't be
+      // clicked, so its "Location censored" label is the way out.
+      let shotCover = null;
+      function ensureCover() {
+        if (!shot) { shotCover?.remove(); shotCover = null; return; }
+        const col = document.querySelector('main.q-page > .col-md-4');
+        if (shotCover?.isConnected && (col ? shotCover.parentElement === col : true)) return;
+        shotCover?.remove();
+        shotCover = c.el('button', { type: 'button', className: 'pbn-shot-cover' + (col ? '' : ' pbn-shot-cover--float'),
+          textContent: col ? 'Location censored' : 'Exit screenshot mode', title: 'Click to turn screenshot mode off (Alt+Shift+S)' });
+        shotCover.addEventListener('click', () => setShot(false));
+        (col || document.body).append(shotCover);
+      }
       function setShot(on) {
         shot = on;
         document.body.classList.toggle('pbn-shot', on);
+        ensureCover();
         if (on) {
           anonOf.clear();
           currentPop?.close();
@@ -3003,7 +3017,7 @@
         } else showRooms();
         refreshAll();
         shotToast?.remove();
-        shotToast = c.el('div', { className: 'pbn-shot-toast', textContent: on ? 'Screenshot mode on · Alt+Shift+S turns it off' : 'Screenshot mode off' });
+        shotToast = c.el('div', { className: 'pbn-shot-toast', textContent: on ? 'Screenshot mode on · click “Location censored” to leave' : 'Screenshot mode off' });
         document.body.append(shotToast);
         const t = shotToast;
         setTimeout(() => t.classList.add('pbn-shot-toast--gone'), 2200);
@@ -3018,12 +3032,14 @@
         body.pbn-shot #pbn-dossier, body.pbn-shot #pbn-rm-banners, body.pbn-shot .pbn-tk-menu { display: none !important; }
         body.pbn-shot .journal-title { visibility: hidden; }
         body.pbn-shot main.q-page > .col-md-4 { position: relative; }
-        body.pbn-shot main.q-page > .col-md-4 > * { filter: blur(16px); pointer-events: none; user-select: none; }
-        body.pbn-shot main.q-page > .col-md-4::after {
-          content: 'Location censored'; position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); z-index: 5;
+        body.pbn-shot main.q-page > .col-md-4 > :not(.pbn-shot-cover) { filter: blur(16px); pointer-events: none; user-select: none; }
+        .pbn-shot-cover {
+          position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); z-index: 5; cursor: pointer;
           padding: 10px 20px; background: #120a0ae6; color: #e8ddd0; border: 1px solid #5a1212; border-radius: 6px;
           font-family: Georgia, 'Times New Roman', serif; font-size: 1.3rem; letter-spacing: .5px; white-space: nowrap;
         }
+        .pbn-shot-cover:hover, .pbn-shot-cover:focus-visible { border-color: #e0b84a; outline: none; }
+        .pbn-shot-cover--float { position: fixed; top: auto; bottom: 16px; left: auto; right: 16px; transform: none; z-index: 9400; font-size: 1.05rem; }
         .pbn-shot-toast {
           position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 9500; padding: 9px 18px;
           background: #120a0af2; color: #e8ddd0; border: 1px solid #9a2020; border-radius: 999px; box-shadow: 0 4px 16px #000a;
@@ -3067,7 +3083,7 @@
       function processRow(row, live = false) {
         process(row);
         row.querySelectorAll('.' + NM).forEach(s => render(s));
-        if (shot) hideRooms(row);
+        if (shot) { hideRooms(row); ensureCover(); }
         dossierScan(row, live);
       }
 

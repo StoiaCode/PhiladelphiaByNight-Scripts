@@ -459,7 +459,7 @@ The toolkit's section in the in-game **Settings** tab has two buttons for this:
 - Room tags in the chat read **[Location censored]**, and the room panel on the right is blurred with *Location censored* over it.
 - The journal title (your character's name), dossier windows and reminder banners are hidden.
 
-It covers every place Personal Names puts a name (see the list above). In `[SYSTEM]` lines it also catches people nobody has seen yet, by the usual verbs (*arrives*, *leaves*, *looks at*, *whispers to*…). Names that people **say or emote** in their own text aren't touched, so check the picture before sharing it. Press the button or Alt+Shift+S again to turn it off; a reload does too.
+It covers every place Personal Names puts a name (see the list above). In `[SYSTEM]` lines it also catches people nobody has seen yet, by the usual verbs (*arrives*, *leaves*, *looks at*, *whispers to*…). Names that people **say or emote** in their own text aren't touched, so check the picture before sharing it. To turn it off, click the **Location censored** label over the room panel (that panel, with the Settings tab, can't be used while it's blurred), press Alt+Shift+S again, or reload. Where there's no room panel, an **Exit screenshot mode** button sits in the bottom-right corner instead.
 
 **Chat Log:** Search finds people under either name. **Save Log** writes the game's text by default; switch *Save Log writes* to *my names* in the toolkit panel to get your names in the file instead.
 
