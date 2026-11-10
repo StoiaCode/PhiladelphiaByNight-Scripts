@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.17.4
+// @version      1.17.5
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.17.4';
+  const TK_VERSION = '1.17.5';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -2636,7 +2636,9 @@
       const ROW = '[role="article"]';
       const NM = 'pbn-nm';
       const norm = s => String(s || '').replace(/\s+/g, ' ').trim();
-      const keyOf = s => norm(s).toLowerCase();
+      // Asterisks around a short desc (*A tall figure*) are decoration: the
+      // game shows them in some places and turns them into italics in others.
+      const keyOf = s => norm(s).replace(/^\*+|\*+$/g, '').trim().toLowerCase();
       const loadAll = () => { try { return JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { return {}; } };
       const loadView = () => (localStorage.getItem(VIEW_KEY) === 'game' ? 'game' : 'mine');
       const newId = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -2849,9 +2851,14 @@
         if ([...span.children].some(ch => !ch.classList.contains('pbn-cf'))) span.dataset.pbnNmHtml = plainHtml(span);
         r.insertNode(span);
       }
-      const NAME_END = /[\s,.!?;:'’]/;
+      const NAME_END = /[\s,.!?;:'’*]/;
       function savedKeyAt(low, at, keys) {
         return keys.find(k => low.startsWith(k, at) && (low.length === at + k.length || NAME_END.test(low[at + k.length])));
+      }
+      // The same, also past a leading "*" (keys are kept without the asterisks): [start, end] or null.
+      function savedNameAt(low, keys) {
+        for (const at of low[0] === '*' ? [0, 1] : [0]) { const k = savedKeyAt(low, at, keys); if (k) return [at, at + k.length]; }
+        return null;
       }
       // Names seen this session where the game marks them for certain (speakers,
       // "You see:", "You look at"). [SYSTEM] lines don't show where a name
@@ -2878,7 +2885,15 @@
             const lead = node.nodeValue.match(/^\s*(•|You look at)\s/);
             if (!lead) continue;
             const map = mapText(runUntil(node, /^(EM|BR|DIV|STRONG)$/));
-            wrapAt(map, map.text.indexOf(lead[1]) + lead[1].length, map.text.length);
+            const from = map.text.indexOf(lead[1]) + lead[1].length;
+            if (map.text.slice(from).trim()) { wrapAt(map, from, map.text.length); continue; }
+            // A short desc written as *…* comes as italics: "You look at <em>A tall
+            // figure</em>". The "(short desc)" and "(breathing)" brackets are italics too.
+            const em = node.nextSibling;
+            if (em?.nodeName === 'EM' && !/^\s*\(/.test(em.textContent) && em.textContent.trim()) {
+              const m2 = mapText([em]);
+              wrapAt(m2, 0, m2.text.length);
+            }
           }
         });
         // Remember them. A new name can match [SYSTEM] lines already on screen,
@@ -2898,13 +2913,13 @@
           const map = mapText(runUntil(label.nextSibling, /^(BR|DIV)$/));
           const low = map.text.toLowerCase();
           const spans = [];
-          const k = savedKeyAt(low, 0, keys);
-          if (k) spans.push([0, k.length]);
+          const k = savedNameAt(low, keys);
+          if (k) spans.push(k);
           // Screenshot mode also takes the usual verbs as the end of a name
           // nobody has seen yet, since a missed one would show in the picture.
           else if (shot) { const m = low.match(SHOT_SUBJECT); if (m) spans.push([0, m[1].length]); }
           const at = low.match(/ (?:looks at|whispers to) (.+?)\.$/);
-          if (at && (known.has(at[1]) || (shot && !/^(you|yourself|someone|nobody)$/.test(at[1])))) { const e = at.index + at[0].length - 1; spans.push([e - at[1].length, e]); }
+          if (at && (known.has(keyOf(at[1])) || (shot && !/^(you|yourself|someone|nobody)$/.test(at[1])))) { const e = at.index + at[0].length - 1; spans.push([e - at[1].length, e]); }
           spans.sort((a, b) => b[0] - a[0]).forEach(([s, e]) => wrapAt(map, s, e));
         });
         // <em>Among them, Name.</em> when peering into a room.
