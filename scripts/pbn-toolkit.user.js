@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.17.1
+// @version      1.17.2
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.17.1';
+  const TK_VERSION = '1.17.2';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -2979,15 +2979,59 @@
       }
       const SHOT_SUBJECT = /^(?!you\b|someone\b|nobody\b)(.+?) (?:arrives|leaves|departs|enters|exits|heads|walks|runs|climbs|steps|slips|emerges|appears|disappears|vanishes|fades|wanders|moves|goes|comes|looks|whispers|stands|sits|lies|falls|rises|wakes|has entered|is)\b/;
       const ROOM_TAG = 'span.text-amber-6';
+      // Your own character's name anywhere in the chat text (people saying
+      // it, too): the full name and each part of it, as whole words.
+      function myNameRe() {
+        if (!bookChar || bookChar === 'default') return null;
+        const esc = w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const parts = [bookChar, ...bookChar.split(/\s+/).filter(w => w.length >= 3)].map(esc);
+        return new RegExp(`(?<![\\p{L}\\p{N}])(?:${parts.join('|')})(?![\\p{L}\\p{N}])`, 'giu');
+      }
       function hideRooms(root) {
+        // "[LOCATION] You are in Some Place": everything after the label goes.
+        root.querySelectorAll('p > span:first-child').forEach(label => {
+          if (label.textContent.trim() !== '[LOCATION]' || label.nextSibling?.classList?.contains('pbn-shot-loc')) return;
+          const nodes = [];
+          for (let n = label.nextSibling; n && !(n.nodeType === 1 && /^(BR|DIV)$/.test(n.tagName)); n = n.nextSibling) nodes.push(n);
+          if (!nodes.length) return;
+          const hold = c.el('span', { hidden: true });
+          hold.append(...nodes);
+          label.after(c.el('span', { className: 'pbn-shot-loc' }, ' Location censored', hold));
+        });
         root.querySelectorAll(ROOM_TAG).forEach(t => {
-          if (t.dataset.pbnShotRoom !== undefined || !/^\s*\[.*\]\s*$/.test(t.textContent)) return;
+          if (t.dataset.pbnShotRoom !== undefined || !/^\s*\[.*\]\s*$/.test(t.textContent) || t.textContent.trim() === '[LOCATION]') return;
           t.dataset.pbnShotRoom = t.textContent;
           t.textContent = '[Location censored]';
         });
+        const re = myNameRe();
+        if (!re || !re.test(root.textContent)) return;
+        const me = anonFor(bookChar);
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        const hits = [];
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          if (n.parentElement?.closest(`.${NM}, .pbn-shot-me, .pbn-shot-loc, .pbn-dos-stub, textarea, input`)) continue;
+          re.lastIndex = 0;
+          if (re.test(n.nodeValue)) hits.push(n);
+        }
+        for (const n of hits) {
+          const t = n.nodeValue, frag = document.createDocumentFragment();
+          let last = 0;
+          re.lastIndex = 0;
+          for (const m of t.matchAll(re)) {
+            const sp = c.el('span', { className: `pbn-shot-me ${NM}--anon`, textContent: me.label });
+            sp.dataset.pbnShotMe = m[0];
+            sp.style.setProperty('--pbn-anon', me.color);
+            frag.append(t.slice(last, m.index), sp);
+            last = m.index + m[0].length;
+          }
+          frag.append(t.slice(last));
+          n.replaceWith(frag);
+        }
       }
       function showRooms() {
         document.querySelectorAll('[data-pbn-shot-room]').forEach(t => { t.textContent = t.dataset.pbnShotRoom; delete t.dataset.pbnShotRoom; });
+        document.querySelectorAll('.pbn-shot-loc').forEach(w => w.replaceWith(...w.lastChild.childNodes));
+        document.querySelectorAll('.pbn-shot-me').forEach(sp => sp.replaceWith(sp.dataset.pbnShotMe));
       }
       let shotToast = null;
       // The room panel (with the Settings tab) is blurred and can't be
@@ -3027,7 +3071,7 @@
         if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyS' && c.isPlay()) { e.preventDefault(); setShot(!shot); }
       });
       c.addStyle(String.raw`
-        .${NM}.${NM}--anon { color: var(--pbn-anon) !important; font-weight: bold; font-style: normal; text-decoration: none !important; }
+        .${NM}.${NM}--anon, .pbn-shot-me { color: var(--pbn-anon) !important; font-weight: bold; font-style: normal; text-decoration: none !important; }
         .${NM}.${NM}--anon::after { content: none !important; }
         body.pbn-shot #pbn-dossier, body.pbn-shot #pbn-rm-banners, body.pbn-shot .pbn-tk-menu { display: none !important; }
         body.pbn-shot .journal-title { visibility: hidden; }

@@ -456,10 +456,11 @@ The toolkit's section in the in-game **Settings** tab has two buttons for this:
 **Screenshot mode** in the toolkit's section of the in-game **Settings** tab (or **Alt+Shift+S** on the play page) anonymises the chat for sharing:
 
 - Everyone becomes a colour, written in that colour: **Red**, **Blue**, **Yellow**… The same person is always the same colour, under any name or desc you've linked to them, and that includes you. Colours go in reading order; after twelve people they repeat with a number (*Blue 2*).
-- Room tags in the chat read **[Location censored]**, and the room panel on the right is blurred with *Location censored* over it.
+- Room tags in the chat read **[Location censored]**, so do `[LOCATION] You are in …` lines, and the room panel on the right is blurred with *Location censored* over it.
+- Your own character's name is replaced with your colour wherever it appears in the chat, including when other people say it: the full name and each part of it (first name, surname) as whole words.
 - The journal title (your character's name), dossier windows and reminder banners are hidden.
 
-It covers every place Personal Names puts a name (see the list above). In `[SYSTEM]` lines it also catches people nobody has seen yet, by the usual verbs (*arrives*, *leaves*, *looks at*, *whispers to*…). Names that people **say or emote** in their own text aren't touched, so check the picture before sharing it. To turn it off, click the **Location censored** label over the room panel (that panel, with the Settings tab, can't be used while it's blurred), press Alt+Shift+S again, or reload. Where there's no room panel, an **Exit screenshot mode** button sits in the bottom-right corner instead.
+It covers every place Personal Names puts a name (see the list above). In `[SYSTEM]` lines it also catches people nobody has seen yet, by the usual verbs (*arrives*, *leaves*, *looks at*, *whispers to*…). Other people's names that someone **says or emotes** in their own text aren't touched (only yours are), so check the picture before sharing it. To turn it off, click the **Location censored** label over the room panel (that panel, with the Settings tab, can't be used while it's blurred), press Alt+Shift+S again, or reload. Where there's no room panel, an **Exit screenshot mode** button sits in the bottom-right corner instead.
 
 **Chat Log:** Search finds people under either name. **Save Log** writes the game's text by default; switch *Save Log writes* to *my names* in the toolkit panel to get your names in the file instead.
 
