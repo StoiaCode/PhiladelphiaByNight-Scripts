@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.16.0
+// @version      1.17.0
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.16.0';
+  const TK_VERSION = '1.17.0';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -2890,7 +2890,7 @@
           setTimeout(() => { rescanQueued = false; const cont = document.querySelector(CHAT); if (cont) processRow(cont); }, 0);
         }
         const keys = knownKeys();
-        if (!keys.length) return;
+        if (!keys.length && !shot) return;
         const known = new Set(keys);
         // [SYSTEM] lines: "X arrives…", "X looks around.", "X looks at Y.", "X whispers to Y."
         root.querySelectorAll('p > span.text-orange-9:first-child').forEach(label => {
@@ -2900,15 +2900,18 @@
           const spans = [];
           const k = savedKeyAt(low, 0, keys);
           if (k) spans.push([0, k.length]);
+          // Screenshot mode also takes the usual verbs as the end of a name
+          // nobody has seen yet, since a missed one would show in the picture.
+          else if (shot) { const m = low.match(SHOT_SUBJECT); if (m) spans.push([0, m[1].length]); }
           const at = low.match(/ (?:looks at|whispers to) (.+?)\.$/);
-          if (at && known.has(at[1])) { const e = at.index + at[0].length - 1; spans.push([e - at[1].length, e]); }
+          if (at && (known.has(at[1]) || (shot && !/^(you|yourself|someone|nobody)$/.test(at[1])))) { const e = at.index + at[0].length - 1; spans.push([e - at[1].length, e]); }
           spans.sort((a, b) => b[0] - a[0]).forEach(([s, e]) => wrapAt(map, s, e));
         });
         // <em>Among them, Name.</em> when peering into a room.
         root.querySelectorAll('p.look-output > em').forEach(em => {
           const map = mapText(Array.from(em.childNodes));
           const m = map.text.match(/^(Among them, )(.+?)\.?$/);
-          if (m && known.has(keyOf(m[2]))) wrapAt(map, m[1].length, m[1].length + m[2].length);
+          if (m && (known.has(keyOf(m[2])) || shot)) wrapAt(map, m[1].length, m[1].length + m[2].length);
         });
       }
       // A name span's content with any word-filter masks undone, so it can be
@@ -2927,6 +2930,16 @@
       }
       function render(span, forLog = false) {
         const orig = span.dataset.pbnNmOrig;
+        if (shot && !forLog) {
+          const a = anonFor(orig);
+          if (span.textContent !== a.label || span.children.length) span.textContent = a.label;
+          span.style.setProperty('--pbn-anon', a.color);
+          span.classList.add(`${NM}--anon`);
+          span.classList.remove(`${NM}--mine`, `${NM}--noted`);
+          span.title = '';
+          return;
+        }
+        if (span.classList.contains(`${NM}--anon`)) { span.classList.remove(`${NM}--anon`); span.style.removeProperty('--pbn-anon'); }
         const e = personOf(orig);
         const mine = !!e?.name && (forLog || (view === 'mine' && !e.off));
         const html = span.dataset.pbnNmHtml;
@@ -2948,6 +2961,77 @@
           + (notes ? ' · click to read your notes' : '');
       }
 
+      // ---- Screenshot mode: everyone in the chat becomes a colour ("Blue",
+      // "Red"…; the same person, under any of their names, always the same
+      // colour), room tags become "[Location censored]", and the room panel,
+      // journal title, dossiers and reminder banners are hidden.
+      const ANON_COLORS = [['Red', '#ff6b6b'], ['Blue', '#5aa9ff'], ['Yellow', '#ffd84a'], ['Green', '#5fd38a'], ['Purple', '#b98cff'], ['Orange', '#ff9f43'],
+        ['Pink', '#ff7ac8'], ['Teal', '#3fd6c6'], ['White', '#f2f2f2'], ['Brown', '#c8946a'], ['Lime', '#b6e35a'], ['Grey', '#a0a0a0']];
+      let shot = false;
+      const anonOf = new Map(); // person -> { label, color }, in order of first appearance
+      function anonFor(orig) {
+        const id = isMe(orig) ? 'me' : index.get(keyOf(orig)) || 'look:' + keyOf(orig);
+        if (!anonOf.has(id)) {
+          const n = anonOf.size, [label, color] = ANON_COLORS[n % ANON_COLORS.length];
+          anonOf.set(id, { label: n < ANON_COLORS.length ? label : label + ' ' + (Math.floor(n / ANON_COLORS.length) + 1), color });
+        }
+        return anonOf.get(id);
+      }
+      const SHOT_SUBJECT = /^(?!you\b|someone\b|nobody\b)(.+?) (?:arrives|leaves|departs|enters|exits|heads|walks|runs|climbs|steps|slips|emerges|appears|disappears|vanishes|fades|wanders|moves|goes|comes|looks|whispers|stands|sits|lies|falls|rises|wakes|has entered|is)\b/;
+      const ROOM_TAG = 'span.text-amber-6';
+      function hideRooms(root) {
+        root.querySelectorAll(ROOM_TAG).forEach(t => {
+          if (t.dataset.pbnShotRoom !== undefined || !/^\s*\[.*\]\s*$/.test(t.textContent)) return;
+          t.dataset.pbnShotRoom = t.textContent;
+          t.textContent = '[Location censored]';
+        });
+      }
+      function showRooms() {
+        document.querySelectorAll('[data-pbn-shot-room]').forEach(t => { t.textContent = t.dataset.pbnShotRoom; delete t.dataset.pbnShotRoom; });
+      }
+      let shotToast = null;
+      function setShot(on) {
+        shot = on;
+        document.body.classList.toggle('pbn-shot', on);
+        if (on) {
+          anonOf.clear();
+          currentPop?.close();
+          const cont = document.querySelector(CHAT);
+          if (cont) process(cont); // wrap names only screenshot mode finds, before colouring
+          cont?.querySelectorAll('.' + NM).forEach(sp => anonFor(sp.dataset.pbnNmOrig)); // colours in reading order
+          if (cont) hideRooms(cont);
+        } else showRooms();
+        refreshAll();
+        shotToast?.remove();
+        shotToast = c.el('div', { className: 'pbn-shot-toast', textContent: on ? 'Screenshot mode on · Alt+Shift+S turns it off' : 'Screenshot mode off' });
+        document.body.append(shotToast);
+        const t = shotToast;
+        setTimeout(() => t.classList.add('pbn-shot-toast--gone'), 2200);
+        setTimeout(() => t.remove(), 3000);
+      }
+      document.addEventListener('keydown', e => {
+        if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyS' && c.isPlay()) { e.preventDefault(); setShot(!shot); }
+      });
+      c.addStyle(String.raw`
+        .${NM}.${NM}--anon { color: var(--pbn-anon) !important; font-weight: bold; font-style: normal; text-decoration: none !important; }
+        .${NM}.${NM}--anon::after { content: none !important; }
+        body.pbn-shot #pbn-dossier, body.pbn-shot #pbn-rm-banners, body.pbn-shot .pbn-tk-menu { display: none !important; }
+        body.pbn-shot .journal-title { visibility: hidden; }
+        body.pbn-shot main.q-page > .col-md-4 { position: relative; }
+        body.pbn-shot main.q-page > .col-md-4 > * { filter: blur(16px); pointer-events: none; user-select: none; }
+        body.pbn-shot main.q-page > .col-md-4::after {
+          content: 'Location censored'; position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); z-index: 5;
+          padding: 10px 20px; background: #120a0ae6; color: #e8ddd0; border: 1px solid #5a1212; border-radius: 6px;
+          font-family: Georgia, 'Times New Roman', serif; font-size: 1.3rem; letter-spacing: .5px; white-space: nowrap;
+        }
+        .pbn-shot-toast {
+          position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 9500; padding: 9px 18px;
+          background: #120a0af2; color: #e8ddd0; border: 1px solid #9a2020; border-radius: 999px; box-shadow: 0 4px 16px #000a;
+          font-family: Georgia, 'Times New Roman', serif; font-size: 1.05rem; transition: opacity .7s; pointer-events: none;
+        }
+        .pbn-shot-toast--gone { opacity: 0; }
+      `);
+
       // Typing indicator ("X is typing", "X and Y are typing"). Vue replaces
       // the whole text when it changes, so swapping it doesn't confuse Vue;
       // the game's version is kept to tell its updates apart from ours.
@@ -2957,7 +3041,7 @@
         const cur = el.textContent;
         if (el.dataset.pbnNmGame === undefined || cur !== el.dataset.pbnNmShown) el.dataset.pbnNmGame = cur;
         const game = el.dataset.pbnNmGame;
-        const swap = who => { const e = personOf(who); return e?.name && view === 'mine' && !e.off ? e.name : who; };
+        const swap = who => { if (shot) return anonFor(who).label; const e = personOf(who); return e?.name && view === 'mine' && !e.off ? e.name : who; };
         let out = game;
         const m = game.match(/^(.+?) (is|are) typing(.*)$/);
         if (m) {
@@ -2983,6 +3067,7 @@
       function processRow(row, live = false) {
         process(row);
         row.querySelectorAll('.' + NM).forEach(s => render(s));
+        if (shot) hideRooms(row);
         dossierScan(row, live);
       }
 
@@ -3967,6 +4052,8 @@
         openList,
         toggleView,
         showingMine: () => view === 'mine',
+        shotOn: () => shot,
+        toggleShot: () => setShot(!shot),
         // Save Log: restores the game text in a copy of a message, or with
         // withNames writes your names into it.
         prepareLogCopy(root, withNames) {
@@ -4903,6 +4990,11 @@
       row.append(btn(viewLabel(), "Switch between your names for people and the game's own text (e.g. for screenshots)", b => {
         namesApi.toggleView();
         b.textContent = viewLabel();
+      }));
+      const shotLabel = () => (namesApi.shotOn() ? 'Screenshot mode: on' : 'Screenshot mode');
+      row.append(btn(shotLabel(), 'Everyone in the chat becomes a colour (Blue, Red…) and the location is censored. Alt+Shift+S toggles it too.', b => {
+        namesApi.toggleShot();
+        b.textContent = shotLabel();
       }));
     }
     if (status['roll-log'] === 'on' && rollLogApi) row.append(btn('Roll log', 'Statistics of your rolls for this character', () => rollLogApi.open()));

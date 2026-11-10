@@ -451,6 +451,16 @@ The toolkit's section in the in-game **Settings** tab has two buttons for this:
 - **Show game's text / Show my names** flips *everything* between your names and the game's text, which is handy right before a screenshot.
 - **People & notes** looks people up (picking someone opens their dossier): everyone you've named or taken notes on for this character, with a search box that matches names, short descs and note text. Press Enter to open the first match. It's also under **People & notes…** in the toolkit panel.
 
+### Screenshot mode
+
+**Screenshot mode** in the toolkit's section of the in-game **Settings** tab (or **Alt+Shift+S** on the play page) anonymises the chat for sharing:
+
+- Everyone becomes a colour, written in that colour: **Red**, **Blue**, **Yellow**… The same person is always the same colour, under any name or desc you've linked to them, and that includes you. Colours go in reading order; after twelve people they repeat with a number (*Blue 2*).
+- Room tags in the chat read **[Location censored]**, and the room panel on the right is blurred with *Location censored* over it.
+- The journal title (your character's name), dossier windows and reminder banners are hidden.
+
+It covers every place Personal Names puts a name (see the list above). In `[SYSTEM]` lines it also catches people nobody has seen yet, by the usual verbs (*arrives*, *leaves*, *looks at*, *whispers to*…). Names that people **say or emote** in their own text aren't touched, so check the picture before sharing it. Press the button or Alt+Shift+S again to turn it off; a reload does too.
+
 **Chat Log:** Search finds people under either name. **Save Log** writes the game's text by default; switch *Save Log writes* to *my names* in the toolkit panel to get your names in the file instead.
 
 Names, notes and saved looks are stored per browser/device and included in the toolkit's Export/Import, which is worth doing now and then since clearing the site's data wipes them.
