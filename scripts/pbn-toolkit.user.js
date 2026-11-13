@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.18.1
+// @version      1.19.0
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.18.1';
+  const TK_VERSION = '1.19.0';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -3147,6 +3147,41 @@
       // "To others, you are still Jane Doe.") and every game name seen this
       // session or saved; short descs aren't matched inside text.
       const myAliases = new Set();
+      // Your own names as the game tracks them: your real name, the alias you
+      // introduce yourself with, and a Mask of a Thousand Faces persona. The
+      // game sends them as "mention-identities" (on connecting, and whenever a
+      // mask goes on or off); its character data has the first two as well.
+      // Only listened to, never sent.
+      const ownIds = { realName: null, activeAlias: null, personaName: null };
+      let idSocket = null;
+      const onIdentities = d => {
+        if (!d || typeof d !== 'object') return;
+        for (const k of Object.keys(ownIds)) if (k in d) ownIds[k] = typeof d[k] === 'string' && d[k].trim() ? d[k].trim() : null;
+        if (shot) { const cont = document.querySelector(CHAT); if (cont) hideRooms(cont); refreshAll(); }
+      };
+      const isSocket = v => v && typeof v === 'object' && typeof v.on === 'function' && typeof v.off === 'function' && typeof v.emit === 'function' && 'connected' in v;
+      function findSocket(inst) {
+        const unref = v => (v && v.__v_isRef ? v.value : v);
+        const pool = [inst.proxy?.socket, inst.proxy?.$socket, ...Object.values(inst.setupState || {}).map(unref),
+          ...Object.values(inst.appContext?.config?.globalProperties || {})];
+        return pool.find(isSocket) || null;
+      }
+      function syncIdentities() {
+        const inst = c.findPlayInstance();
+        if (!inst) return;
+        const ch = inst.proxy?.character;
+        if (ch && typeof ch === 'object') {
+          if (!ownIds.realName && typeof ch.name === 'string') ownIds.realName = ch.name;
+          if (ownIds.activeAlias === null && typeof ch.active_alias === 'string' && ch.active_alias.trim()) ownIds.activeAlias = ch.active_alias.trim();
+        }
+        const sock = findSocket(inst);
+        if (sock && sock !== idSocket) {
+          idSocket?.off('mention-identities', onIdentities);
+          idSocket = sock;
+          sock.on('mention-identities', onIdentities);
+        }
+      }
+      const ownNames = () => [ownIds.realName, ownIds.activeAlias, ownIds.personaName].filter(Boolean);
       const ALIAS_RE = /\bTo others, you are (?:still |now )?(.+?)\.\s*$/;
       function scanAliases(root) {
         let found = false;
@@ -3173,7 +3208,7 @@
         // show another name than the game's character data (a borrowed face).
         const me = bookChar;
         const journal = document.querySelector('.journal-title')?.textContent.trim().match(/^(.+?)['’]s Journal$/)?.[1];
-        for (const n of [bookChar !== 'default' ? bookChar : null, journal, ...myAliases]) if (n) addName(n, me);
+        for (const n of [bookChar !== 'default' ? bookChar : null, journal, ...ownNames(), ...myAliases]) if (n) addName(n, me);
         const others = [...seenNames.values(), ...Object.values(book).flatMap(x => x.looks), ...Object.values(looksFor()).map(v => v.orig).filter(Boolean)];
         for (const n of others) if (looksLikeName(n) && !isMe(n)) addName(n, n);
         if (!who.size) return null;
@@ -3537,7 +3572,7 @@
         }
         return differs ? (slotColorCache = out) : null;
       }
-      const isMe = orig => isSelf(orig) || (bookChar !== 'default' && keyOf(orig) === keyOf(bookChar));
+      const isMe = orig => isSelf(orig) || (bookChar !== 'default' && keyOf(orig) === keyOf(bookChar)) || ownNames().some(n => keyOf(n) === keyOf(orig));
       // The name /color needs: their real name from a look, or the text
       // itself if it reads like a name (capitalised words, no commas).
       function colorName(orig) {
@@ -4332,6 +4367,7 @@
         const run = () => {
           syncChar();
           syncContainer();
+          syncIdentities();
         };
         run();
         tick = setInterval(run, 1000);
@@ -4344,6 +4380,8 @@
         document.removeEventListener('contextmenu', onChatContext);
         window.removeEventListener('resize', placeDossier);
         clearInterval(tick);
+        idSocket?.off('mention-identities', onIdentities);
+        idSocket = null;
         if (observer) observer.disconnect();
         if (typingObserver) typingObserver.disconnect();
         observer = null; container = null; typingObserver = null; column = null;
