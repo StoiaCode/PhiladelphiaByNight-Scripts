@@ -295,7 +295,7 @@ It's display-only and deliberately temporary: nothing is saved, a reload or swit
 
 **Always hide** (toolkit only) is the permanent version, for lines you never want to read again:
 
-- **Always hide messages like…** — click a message. Its full text opens in a small editor; replace any part that changes with `*`, which stands for any text, and click **Always hide**. `[SYSTEM] * has entered torpor.` hides that line for everyone, while `[SYSTEM] * has left torpor.` still shows. A live count says how many messages in the chat it matches. A real asterisk (like the one in front of emotes) is written `*`; the editor does that for you when it fills in a message.
+- **Always hide messages like…** — click a message. Its full text opens in a small editor; replace any part that changes with `*`, which stands for any text, and click **Always hide**. `[SYSTEM] * has entered torpor.` hides that line for everyone, while `[SYSTEM] * has left torpor.` still shows. A live count says how many messages in the chat it matches. A real asterisk (like the one in front of emotes) is written `\*`; the editor does that for you when it fills in a message.
 - **Always hidden (N) ▸** lists your rules with how many messages each is hiding right now. Click one to change or delete it; **+ Write a rule…** starts one from scratch.
 
 The whole message has to match, from its first character to its last, so a rule never hides a longer line that merely contains it. Rules are kept in this browser across reloads (and in the toolkit's Export), match the game's own text (your names for people and the word filter don't matter), and never touch **Save Log**. While **Pick messages to hide…** is on, rule-hidden messages show faded.
