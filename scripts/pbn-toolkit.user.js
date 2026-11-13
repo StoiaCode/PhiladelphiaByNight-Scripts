@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.17.5
+// @version      1.18.0
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.17.5';
+  const TK_VERSION = '1.18.0';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -1095,6 +1095,8 @@
         tpl.innerHTML = html;
         const root = tpl.content;
         censorApi?.unwrap(root); // the word filter is display only (DOM fallback copies carry it)
+        root.querySelectorAll('.pbn-shot-me').forEach(sp => sp.replaceWith(sp.dataset.pbnShotMe)); // screenshot mode, too
+        root.querySelectorAll('.pbn-shot-loc').forEach(w => w.replaceWith(...w.lastChild.childNodes));
         namesApi?.prepareLogCopy(root, withNames);
         root.querySelectorAll('[class*="q-ml-"], [class*="q-mx-"], [class*="q-px-"], [class*="q-pl-"]').forEach(n => n.before(' '));
         root.querySelectorAll('[class*="q-mr-"], [class*="q-mx-"], [class*="q-px-"], [class*="q-pr-"]').forEach(n => n.after(' '));
@@ -1270,6 +1272,34 @@
         body.pbn-hide-cat-whisper:not(.pbn-hide-picking) .chat-container [role="article"]:is(.pbn-cat-whisper, :has(.whisper-line, .auspex-whisper-line)),
         body.pbn-hide-cat-system:not(.pbn-hide-picking) .chat-container [role="article"]:has(> p > span.text-orange-9:first-child),
         body.pbn-hide-cat-ooc:not(.pbn-hide-picking) .chat-container [role="article"]:has(> p > span.text-blue:first-child) { display: none !important; }
+        body:not(.pbn-hide-picking) .chat-container [role="article"].pbn-hidden-rule { display: none !important; }
+        body.pbn-hide-picking .chat-container [role="article"].pbn-hidden-rule { opacity: .3; }
+        body.pbn-hide-rulepick .chat-container [role="article"] { cursor: pointer; }
+        body.pbn-hide-rulepick .chat-container [role="article"]:hover { outline: 1px dashed #e0b84a99; outline-offset: -1px; }
+        #pbn-hr-dialog { position: fixed; inset: 0; z-index: 9600; display: flex; align-items: center; justify-content: center; background: #000a; }
+        .pbn-hr__panel {
+          width: min(620px, 94vw); box-sizing: border-box; padding: 18px 20px; background: #120a0a; color: #e8ddd0;
+          border: 1px solid #5a1212; border-radius: 6px; box-shadow: 0 8px 40px #000c; font-family: Georgia, 'Times New Roman', serif; font-size: 1rem;
+        }
+        .pbn-hr__head { font-family: TMUnicorn, serif; font-size: 1.3rem; letter-spacing: .5px; margin-bottom: 8px; }
+        .pbn-hr__hint { color: #9a8a7a; font-style: italic; margin-bottom: 10px; line-height: 1.4; }
+        .pbn-hr__text {
+          width: 100%; box-sizing: border-box; resize: vertical; padding: 8px 10px; background: #0d0707; color: #e8dcc0;
+          border: 1px solid #5a1212; border-radius: 4px; font: 1rem/1.45 Georgia, 'Times New Roman', serif;
+        }
+        .pbn-hr__text:focus { outline: none; border-color: #e0b84a; }
+        .pbn-hr__count { margin-top: 6px; color: #c4b49a; min-height: 1.4em; }
+        .pbn-hr__err { color: #f0906a; min-height: 1.2em; }
+        .pbn-hr__row { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+        .pbn-hr__btn { padding: 6px 14px; cursor: pointer; background: #120a0a; color: #c4b49a; border: 1px solid #9e2b2b80; border-radius: 5px; font: inherit; }
+        .pbn-hr__btn:hover { color: #e8dcc0; background: #5a121233; }
+        .pbn-hr__btn--primary { color: #f3e6cf; background: #9e2b2b; border-color: #9e2b2b; }
+        .pbn-hr__btn--primary:hover { background: #b33434; }
+        .pbn-hr__btn--del:hover { color: #f0906a; }
+        .pbn-hr-menu { max-width: min(460px, 94vw); }
+        .pbn-hr-menu .pbn-tk-menu__item { justify-content: space-between; }
+        .pbn-hr-menu__rule { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+        .pbn-hr-menu__n { color: #9a8a7a; font-size: .9rem; }
         body.pbn-hide-picking .chat-container [role="article"] { cursor: pointer; }
         body.pbn-hide-picking .chat-container [role="article"]:hover { outline: 1px dashed #e0b84a99; outline-offset: -1px; }
         body.pbn-hide-picking .chat-container [role="article"].pbn-hidden,
@@ -1474,6 +1504,7 @@
           if (tagged.has(row)) return;
           tagged.add(row);
           if (WHISPER_RE.test(row.textContent)) row.classList.add('pbn-cat-whisper');
+          matchRules(row);
         });
         if (cont !== tagContainer) {
           if (tagObserver) tagObserver.disconnect();
@@ -1481,6 +1512,117 @@
           tagObserver = new MutationObserver(tagWhispers);
           tagObserver.observe(cont, { childList: true });
         }
+      }
+      // ---- Always hide: rules kept across reloads. A rule is a message's
+      // whole text as the game wrote it (your names and the word filter don't
+      // count); * stands for any text, \* for a real asterisk.
+      const RULES_KEY = 'pbn-hide-rules';
+      function loadRules() {
+        try { const v = JSON.parse(localStorage.getItem(RULES_KEY) || '[]'); return Array.isArray(v) ? v.filter(x => typeof x === 'string' && x.trim()) : []; } catch (e) { return []; }
+      }
+      const normText = t => t.replace(/\s+/g, ' ').trim();
+      const escapeStars = t => t.replace(/\\/g, '\\\\').replace(/\*/g, '\\*');
+      function ruleRe(rule) {
+        const r = normText(rule);
+        let out = '';
+        for (let i = 0; i < r.length; i++) {
+          if (r[i] === '\\' && (r[i + 1] === '*' || r[i + 1] === '\\')) out += '\\' + r[++i];
+          else if (r[i] === '*') out += '.*';
+          else out += r[i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+        return new RegExp('^' + out + '$');
+      }
+      let rules = loadRules(), ruleRes = rules.map(ruleRe);
+      const rowTexts = new WeakMap();
+      const rowText = row => rowTexts.get(row) ?? (rowTexts.set(row, normText(htmlToText(row.innerHTML))), rowTexts.get(row));
+      function matchRules(row) {
+        const hit = ruleRes.length > 0 && ruleRes.some(re => re.test(rowText(row)));
+        if (hit !== row.classList.contains('pbn-hidden-rule')) row.classList.toggle('pbn-hidden-rule', hit);
+      }
+      function saveRules(next) {
+        rules = [...new Set(next.map(normText).filter(Boolean))];
+        ruleRes = rules.map(ruleRe);
+        localStorage.setItem(RULES_KEY, JSON.stringify(rules));
+        document.querySelectorAll(`${CHAT} ${ROW}`).forEach(matchRules);
+        refreshHideButton();
+      }
+      // Writing or changing a rule, with a live count of what it hides.
+      function ruleDialog(initial, index = -1) {
+        document.getElementById('pbn-hr-dialog')?.remove();
+        const ta = c.el('textarea', { className: 'pbn-hr__text', value: initial, spellcheck: false, rows: 4 });
+        ta.setAttribute('aria-label', 'Messages to always hide');
+        const count = c.el('div', { className: 'pbn-hr__count' });
+        const err = c.el('div', { className: 'pbn-hr__err' });
+        const btn = (t, cls = '') => c.el('button', { type: 'button', className: 'pbn-hr__btn ' + cls, textContent: t });
+        const del = index >= 0 ? btn('Delete rule', 'pbn-hr__btn--del') : null;
+        const cancel = btn('Cancel'), save = btn(index >= 0 ? 'Save' : 'Always hide', 'pbn-hr__btn--primary');
+        const box = c.el('div', { className: 'pbn-hr__panel' },
+          c.el('div', { className: 'pbn-hr__head', textContent: index >= 0 ? 'Edit hide rule' : 'Always hide messages like this' }),
+          c.el('div', { className: 'pbn-hr__hint', textContent: 'The whole message has to match. Replace a part that changes (a name, a place) with * , which stands for any text. A real asterisk is written \\*.' }),
+          ta, count, err,
+          c.el('div', { className: 'pbn-hr__row' }, del, c.el('div', { style: 'flex:1 1 auto' }), cancel, save));
+        const overlay = c.el('div', { id: 'pbn-hr-dialog' }, box);
+        overlay.setAttribute('role', 'dialog');
+        const close = () => { document.removeEventListener('keydown', onKey, true); overlay.remove(); };
+        const onKey = e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } };
+        const update = () => {
+          err.textContent = '';
+          if (!normText(ta.value)) { count.textContent = ''; return; }
+          const re = ruleRe(ta.value);
+          const n = [...document.querySelectorAll(`${CHAT} ${ROW}`)].filter(r => re.test(rowText(r))).length;
+          count.textContent = n === 1 ? 'Matches 1 message in the chat now.' : `Matches ${n} messages in the chat now.`;
+        };
+        ta.addEventListener('input', update);
+        cancel.addEventListener('click', close);
+        overlay.addEventListener('mousedown', e => { if (e.target === overlay) close(); });
+        del?.addEventListener('click', () => { saveRules(rules.filter((_, i) => i !== index)); close(); });
+        save.addEventListener('click', () => {
+          const v = normText(ta.value);
+          if (!v || /^[*\s]*$/.test(v)) { err.textContent = 'That would hide every message. Keep some of the text.'; return; }
+          const next = [...rules];
+          if (index >= 0) next[index] = v; else next.push(v);
+          saveRules(next);
+          close();
+        });
+        document.addEventListener('keydown', onKey, true);
+        document.body.append(overlay);
+        update();
+        ta.focus();
+      }
+      // Picking the message a rule starts from: one click.
+      function onRulePick(e) {
+        const row = e.target.closest(`${CHAT} ${ROW}`);
+        if (!row) return;
+        e.preventDefault(); e.stopPropagation();
+        stopRulePick();
+        ruleDialog(escapeStars(rowText(row)));
+      }
+      function onRulePickKey(e) { if (e.key === 'Escape') stopRulePick(); }
+      function startRulePick() {
+        document.body.classList.add('pbn-hide-rulepick');
+        document.addEventListener('click', onRulePick, true);
+        document.addEventListener('keydown', onRulePickKey, true);
+      }
+      function stopRulePick() {
+        document.body.classList.remove('pbn-hide-rulepick');
+        document.removeEventListener('click', onRulePick, true);
+        document.removeEventListener('keydown', onRulePickKey, true);
+      }
+      function buildRulesMenu() {
+        const menu = c.el('div', { className: 'pbn-tk-menu pbn-hr-menu' }, c.el('div', { className: 'pbn-tk-menu__head', textContent: 'Always hidden' }));
+        menu.setAttribute('role', 'menu');
+        if (!rules.length) menu.append(c.el('div', { className: 'pbn-tk-menu__note', textContent: 'No rules yet.' }));
+        rules.forEach((r, i) => {
+          const n = [...document.querySelectorAll(`${CHAT} .pbn-hidden-rule`)].filter(row => ruleRes[i].test(rowText(row))).length;
+          const b = c.el('button', { type: 'button', className: 'pbn-tk-menu__item', title: 'Edit or delete this rule' },
+            c.el('span', { className: 'pbn-hr-menu__rule', textContent: r }), c.el('span', { className: 'pbn-hr-menu__n', textContent: n ? String(n) : '' }));
+          b.addEventListener('click', () => { currentPop?.close(); ruleDialog(r, i); });
+          menu.append(b);
+        });
+        const add = c.el('button', { type: 'button', className: 'pbn-tk-menu__item', textContent: '+ Write a rule…' });
+        add.addEventListener('click', () => { currentPop?.close(); ruleDialog(''); });
+        menu.append(c.el('div', { className: 'pbn-tk-menu__sep' }), add);
+        return menu;
       }
       const picking = () => document.body.classList.contains('pbn-hide-picking');
       const hiddenCount = () => document.querySelectorAll(`${CHAT} .pbn-hidden`).length;
@@ -1537,7 +1679,11 @@
           currentPop?.close();
           refreshHideButton();
         });
-        menu.append(pick, showAll);
+        const always = c.el('button', { type: 'button', className: 'pbn-tk-menu__item', textContent: 'Always hide messages like…', title: 'Click a message, then hide every message with the same text from now on' });
+        always.addEventListener('click', () => { currentPop?.close(); startRulePick(); });
+        const list = c.el('button', { type: 'button', className: 'pbn-tk-menu__item', textContent: `Always hidden (${rules.length}) ▸` });
+        list.addEventListener('click', () => { const at = document.querySelector(`#${HIDE_ID} .pbn-lh-toggle`); currentPop?.close(); c.openPopover(at, buildRulesMenu()); });
+        menu.append(pick, showAll, c.el('div', { className: 'pbn-tk-menu__sep' }), always, list);
         return menu;
       }
       function ensureHide() {
@@ -1554,6 +1700,7 @@
       function resetHide() {
         if (tagObserver) { tagObserver.disconnect(); tagObserver = null; tagContainer = null; }
         stopPicking();
+        stopRulePick();
         HIDE_CATS.forEach(([k]) => document.body.classList.remove(`pbn-hide-cat-${k}`));
       }
 
@@ -5033,6 +5180,7 @@
   const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
   const IMPORT_SHAPES = {
     [SETTINGS_KEY]: v => isObj(v),
+    'pbn-hide-rules': v => Array.isArray(v) && v.every(x => typeof x === 'string'),
     'pbn-roll-log': v => isObj(v) && Object.values(v).every(book => isObj(book) && Object.values(book).every(e =>
       isObj(e) && ['pool', 'diff', 'n', 'dice', 'ones', 'tens', 'sux', 'botches', 'fails'].every(f => Number.isInteger(e[f]) && e[f] >= 0) &&
       (e.labels === undefined || typeof e.labels === 'string') &&
