@@ -537,7 +537,7 @@ The window shows the game time now, and every reminder's next time in both clock
 
 When one comes due, a banner appears at the top of the page with **Done** (or **Done now**) and **Snooze 1h**, and the tab title gets a ⏰. Reminders only go off while a PbN page is open; anything that came due while it was closed shows up as soon as you open one. They're stored in this browser only.
 
-How game time is worked out: one game night, 6:00 PM to 6:00 AM, runs over one real day at half speed. It starts at 16:00 CET (UTC+1 all year round, no summer time), so 1:00 AM game time is 06:00 CET, shown in your own time zone.
+How game time is worked out: one game night, 6:00 PM to 6:00 AM, runs over one real day at half speed. When the night starts is taken from the game itself: the room panel's **Local Time** is fresh each time it changes (on connecting or moving), and that moment sets the clock, to within a few real minutes. Until it has seen one, the toolkit assumes 16:00 CET. Times are shown in your own time zone.
 
 ---
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.18.0
+// @version      1.18.1
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.18.0';
+  const TK_VERSION = '1.18.1';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -4621,11 +4621,41 @@
       const pad = n => String(n).padStart(2, '0');
 
       // ---- Game clock. The game skips daytime: 6:00 PM to 6:00 AM runs over
-      // one real day at half speed, starting at 16:00 CET (UTC+1 all year,
-      // no summer time), then snaps back to 6:00 PM.
-      const NIGHT_START_UTC = 15 * 60; // 16:00 CET, in minutes past midnight UTC
+      // one real day at half speed, then snaps back to 6:00 PM. When the night
+      // starts is learned from the game itself (see sampleClock); until then
+      // it's assumed to be 16:00 CET.
+      const CLOCK_KEY = 'pbn-game-clock'; // { start: minutes past midnight UTC, at: when it was learned }
+      let NIGHT_START_UTC = (() => {
+        try { const v = JSON.parse(localStorage.getItem(CLOCK_KEY) || 'null'); if (Number.isFinite(v?.start)) return v.start; } catch (e) { /* default */ }
+        return 15 * 60;
+      })();
       const DUSK = 18 * 60;            // 6:00 PM
       const utcMin = ms => Math.floor(ms / MIN) % 1440;
+      // The room panel's "Local Time" comes with each room update (connecting,
+      // moving) and then sits unchanged, so it's only fresh at the moment it
+      // changes. That moment re-anchors the clock. One game minute is two real
+      // minutes, so the start is rounded to 5 real minutes.
+      let lastShown = null;
+      function sampleClock() {
+        const m = document.querySelector('.users-here')?.textContent.match(/Local Time:\s*(\d{1,2}):(\d{2})(?:\s*([AaPp])\.?\s*[Mm]\.?)?/);
+        if (!m) return;
+        let h = Number(m[1]);
+        if (m[3]) h = h % 12 + (/p/i.test(m[3]) ? 12 : 0); // 4:55 AM, or 04:55 after the 24-hour clock
+        const shown = h * 60 + Number(m[2]);
+        if (shown === lastShown) return;
+        const first = lastShown === null;
+        lastShown = shown;
+        if (first && performance.now() > 60000) return; // drawn again from old data, not a fresh update
+        const sinceDusk = ((shown - DUSK) % 1440 + 1440) % 1440;
+        if (sinceDusk >= 720) return;
+        const nowMin = (Date.now() / MIN) % 1440;
+        const start = (Math.round(((nowMin - 2 * sinceDusk - 1) % 1440 + 1440) % 1440 / 5) * 5) % 1440;
+        if (start === NIGHT_START_UTC) return;
+        NIGHT_START_UTC = start;
+        localStorage.setItem(CLOCK_KEY, JSON.stringify({ start, at: Date.now() }));
+        LOG(`reminders: game night now starts at ${pad(Math.floor(start / 60))}:${pad(start % 60)} UTC`);
+        refresh();
+      }
       const gameMinAt = ms => (DUSK + Math.floor((((utcMin(ms) - NIGHT_START_UTC) % 1440 + 1440) % 1440) / 2)) % 1440;
       const fmtGame = m => `${(Math.floor(m / 60) + 11) % 12 + 1}:${pad(m % 60)} ${m >= 720 ? 'PM' : 'AM'}`;
       // Next real moment after `after` that the game clock shows game minute m.
@@ -4926,6 +4956,7 @@
       // changes arrive through the storage event.
       window.addEventListener('storage', e => { if (e.key === KEY) refresh(); });
       setInterval(refresh, 20000);
+      setInterval(() => { if (c.isPlay()) sampleClock(); }, 5000);
       refresh();
     },
   });
