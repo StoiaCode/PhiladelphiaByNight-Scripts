@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.20.0
+// @version      1.20.1
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.20.0';
+  const TK_VERSION = '1.20.1';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -4525,7 +4525,7 @@
         const bar = document.querySelector(BAR);
         if (!bar) return;
         if (!box) build();
-        if (box.parentElement !== bar) { bar.classList.add('pbn-who-bar'); bar.append(box); }
+        if (box.parentElement !== bar) bar.append(box);
         const r = c.roomPeople();
         if (!r) return;
         const now = Date.now();
@@ -4599,11 +4599,14 @@
       }
 
       c.addStyle(String.raw`
-        .room-presence-bar.pbn-who-bar { display: flex !important; flex-wrap: wrap !important; align-items: center; row-gap: 2px; }
+        /* Vue rewrites the bar's class attribute whenever "alone"/"not alone"
+           flips, so the bar is picked out by what it holds, not by a class. */
+        .room-presence-bar:has(> .pbn-who) { display: flex !important; flex-wrap: wrap !important; align-items: center; row-gap: 2px; }
+        .room-presence-bar:has(> .pbn-who) > :not(.pbn-who) { flex: none; }
         .pbn-who { display: contents; }
         .pbn-who__toggle {
-          margin-left: 10px; padding: 1px 11px; cursor: pointer; background: none; color: #c4b49a;
-          border: 1px solid #5a1212; border-radius: 999px; font: inherit; font-size: .95rem; line-height: 1.5;
+          flex: none; white-space: nowrap; margin-left: 10px; padding: 1px 11px; cursor: pointer; background: none; color: #c4b49a;
+          border: 1px solid #6b5836; border-radius: 999px; font: inherit; font-size: .95rem; line-height: 1.5;
         }
         .pbn-who__toggle:hover, .pbn-who__toggle:focus-visible { color: #f3e6cf; border-color: #e0b84a; outline: none; }
         .pbn-who__toggle--ping { color: #f3e6cf; border-color: #e0b84a; animation: pbn-who-ping 1s ease-in-out 3; }
@@ -4637,7 +4640,6 @@
       }, () => {
         clearInterval(timer);
         clearTimeout(pingT);
-        box?.parentElement?.classList.remove('pbn-who-bar');
         box?.remove();
         box = toggle = list = null;
         shown.clear();
