@@ -37,6 +37,7 @@ require no account or server-side setup.
   - [Right-click menu](#right-click-menu)
   - [The name editor](#the-name-editor)
   - [Screenshot mode](#screenshot-mode)
+- [Who's Here (toolkit only)](#whos-here-toolkit-only)
 - [Roll Log (toolkit only)](#roll-log-toolkit-only)
 - [Reminders (toolkit only)](#reminders-toolkit-only)
 - [24-Hour Clock & Celsius (toolkit only, off by default)](#24-hour-clock--celsius-toolkit-only-off-by-default)
@@ -76,7 +77,7 @@ press **Alt+Shift+T** anywhere on the site).
 
 New features only go into the toolkit, and several exist only there:
 [Personal Names, Notes & Dossiers](#personal-names-notes--dossiers-toolkit-only),
-[Roll Log](#roll-log-toolkit-only), [Reminders](#reminders-toolkit-only),
+[Who's Here](#whos-here-toolkit-only), [Roll Log](#roll-log-toolkit-only), [Reminders](#reminders-toolkit-only),
 [24-Hour Clock & Celsius](#24-hour-clock--celsius-toolkit-only-off-by-default),
 and parts of the others (marked *toolkit only* below).
 
@@ -440,7 +441,7 @@ Give people your own names. Someone you only know as *"a man in a grey coat"* in
   - the **You see:** list
   - **You look at …**
   - "Among them, …" when peering into a room
-  - `[SYSTEM]` lines about someone (arrivals, departures, "X looks around.", "X looks at Y.", "X whispers to Y."). The game doesn't mark where a name ends there, so this works for anyone already seen speaking, emoting or in a **You see:** list this session, plus anyone you've named, noted or looked at
+  - `[SYSTEM]` lines about someone (arrivals, departures, "X looks around.", "X looks at Y.", "X whispers to Y."). The game doesn't mark where a name ends there, so this works for anyone in the room with you, anyone already seen speaking, emoting or in a **You see:** list this session, plus anyone you've named, noted or looked at
   - the "X is typing" indicator
 
   Coloured short descs work too (`a <tall figure> in a <long coat>`); switching back to the game's text restores the colours.
@@ -452,7 +453,7 @@ Give people your own names. Someone you only know as *"a man in a grey coat"* in
 
 **Clicking a name** in the chat opens that person's **dossier**: a window that floats over the page with one tab per person you've opened. A tab shows:
 
-- your name for them and their other appearances (with a **Name · link…** button for renaming and "Same person as…"),
+- your name for them and their other appearances (with a **Name · link…** button for renaming and "Same person as…"), and a green **here** badge while they're in the room with you. Their short desc underneath is the one they're wearing right now if they're here, otherwise the one from your last look,
 - **Colour** sets the colour of their name in your chat with the game's `/color` (see the right-click menu below),
 - **Look** sends `/look` at them right away (the new look replaces the saved one), and **Whisper** starts `/whisper <them> ` in the command box for you to finish. A line you had already typed (not a command) becomes the whisper's message. Both use the name or desc you last clicked or looked at for that person (anyone in the room can be named by their description), so after a reintroduction, clicking their new name switches the buttons over,
 - your notes on them, editable right there,
@@ -464,7 +465,7 @@ When you `/look` at someone, the look is saved (replacing the previous one for t
 
 The window can be dragged by its **Dossiers** title bar, resized from the bottom-right corner, collapsed (▾, or double-click the header) and closed (✕). **A− / A+** change the text size and **Aa** switches between a plain sans-serif and a serif font. Position, size, font and text size are remembered. Each of your characters keeps their own saved looks (the last 200 people).
 
-**Introduced people link themselves.** Once you know someone's name, the game shows their look as *You look at Jane Doe (a woman in a long red coat…)*. If that short desc is someone you've already looked at, named or noted, the two are joined without asking (and the same the other way round). The dossier then heads them with their name and shows the short desc once underneath.
+**Introduced people link themselves.** Once you know someone's name, the game shows their look as *You look at Jane Doe (a woman in a long red coat…)*. If that short desc is someone you've already looked at, named or noted, the two are joined without asking (and the same the other way round). The dossier then heads them with their name and shows the short desc once underneath. The same happens when someone you know by name is in the room with you: the game knows them by that name and that desc, so a desc you'd saved joins the name.
 
 **"Same person?"** When a look comes in, it's compared with the looks you've saved of everyone else. If at least 2 of its lines are word-for-word identical to someone else's, making up 30% or more of the shorter look, the dossier asks *Same person as …?* That covers someone who changed their short desc or outfit, or whom the game now shows by their real name. **Same person** links the two (keeping your name and notes); **Not them** stops asking about that pair. Lines are line breaks and sentences of 30+ characters; the game's own lines (court standing, gear, the italic state lines like "Color sits warm in their skin…") and any line found in three or more people's looks don't count, so two strangers with the same merits don't get matched.
 
@@ -485,7 +486,7 @@ All three behaviours can be switched off in the toolkit panel: dossiers on click
 
 - **Name this person / You call them** — type the name and press Enter. Clearing the field and saving removes the name (notes stay).
 - **Notes** — your own notes on this person, with Markdown: `# heading`, `**bold**`, `*italic*`, `- lists`, `> quotes`, `[links](https://…)`. Click **Write notes…** (or click existing notes) to edit. Notes are saved as you type, so closing the menu or pressing Esc never loses anything; **Done** (or Ctrl+Enter) shows them formatted again.
-- **Same person as…** — for when someone you know turns up under a new desc or name (they "introduce themselves as the Count"): click the new one, pick who it is from your searchable list, and it joins them. The list also has people you haven't named yet: anyone you've looked at, or seen in the chat this session, so two unnamed descs can be linked too. From then on both show your name for them and share the notes. If the new one already had its own name or notes, they're merged in: notes are appended below a divider, the other name goes into **↺ Back to**.
+- **Same person as…** — for when someone you know turns up under a new desc or name (they "introduce themselves as the Count"): click the new one, pick who it is from your searchable list, and it joins them. The list also has people you haven't named yet: anyone in the room, anyone you've looked at, or seen in the chat this session, so two unnamed descs can be linked too. Whoever is in the room right now comes first, marked **● here**. From then on both show your name for them and share the notes. If the new one already had its own name or notes, they're merged in: notes are appended below a divider, the other name goes into **↺ Back to**.
 - **Also seen as** — the person's other appearances. **✕** splits one off again (or **Not them** for the one you clicked), e.g. when two people turn out to share a generic short desc. Splitting doesn't undo a merge's notes; those stay with the person.
 - **↺ Back to "…"** — the last few names you gave this person, one click to switch back.
 - **Show the game's text for them** — turns your name off for just this person without forgetting it.
@@ -502,14 +503,28 @@ The toolkit's section in the in-game **Settings** tab has two buttons for this:
 
 - Everyone becomes a colour, written in that colour: **Red**, **Blue**, **Yellow**… The same person is always the same colour, under any name or desc you've linked to them, and that includes you. Colours go in reading order; after twelve people they repeat with a number (*Blue 2*).
 - Room tags in the chat read **[Location censored]**, so do `[LOCATION] You are in …` lines, and the room panel on the right is blurred with *Location censored* over it.
-- Names inside what people say and emote are replaced too, with that person's colour: yours, and the game name of everyone seen this session or saved. Your own covers every name the game knows you by: your character's name, the alias you introduce yourself with and the face you wear under Mask of a Thousand Faces (the game tells the page whenever a mask goes on or off), plus the journal's name and the one in "To others, you are still …". While masked, your own lines get your colour too. Each name matches in full and by its parts (first name, surname) as whole words; titles like *Lord* or *Sister* don't match on their own. Short descs aren't matched inside text, and a name that's also an ordinary word (*Rose*, *Will*) gets censored as a word too.
-- The journal title (your character's name), dossier windows and reminder banners are hidden.
+- Names inside what people say and emote are replaced too, with that person's colour: yours, and the game name of everyone in the room, seen this session or saved. Your own covers every name the game knows you by: your character's name, the alias you introduce yourself with and the face you wear under Mask of a Thousand Faces (the game tells the page whenever a mask goes on or off), plus the journal's name and the one in "To others, you are still …". While masked, your own lines get your colour too. Each name matches in full and by its parts (first name, surname) as whole words; titles like *Lord* or *Sister* don't match on their own. Short descs aren't matched inside text, and a name that's also an ordinary word (*Rose*, *Will*) gets censored as a word too.
+- The journal title (your character's name), dossier windows and reminder banners are hidden. The [Who's Here](#whos-here-toolkit-only) list shows colours instead of names and descs.
 
-It covers every place Personal Names puts a name (see the list above). In `[SYSTEM]` lines it also catches people nobody has seen yet, by the usual verbs (*arrives*, *leaves*, *looks at*, *whispers to*…). A name nobody has used where the toolkit can see it (as a speaker, in **You see:** or a look) isn't known and stays visible, as do nicknames, so check the picture before sharing it. To turn it off, click the **Location censored** label over the room panel (that panel, with the Settings tab, can't be used while it's blurred), press Alt+Shift+S again, or reload. Where there's no room panel, an **Exit screenshot mode** button sits in the bottom-right corner instead.
+It covers every place Personal Names puts a name (see the list above). Everyone in the room is known from the start, even before they've said anything. In `[SYSTEM]` lines it also catches people nobody has seen yet, by the usual verbs (*arrives*, *leaves*, *looks at*, *whispers to*…). Someone who has already left and was never seen where the toolkit can see it (in the room, as a speaker, in **You see:** or a look) isn't known and stays visible, as do nicknames, so check the picture before sharing it. To turn it off, click the **Location censored** label over the room panel (that panel, with the Settings tab, can't be used while it's blurred), press Alt+Shift+S again, or reload. Where there's no room panel, an **Exit screenshot mode** button sits in the bottom-right corner instead.
 
 **Chat Log:** Search finds people under either name. **Save Log** writes the game's text by default; switch *Save Log writes* to *my names* in the toolkit panel to get your names in the file instead.
 
 Names, notes and saved looks are stored per browser/device and included in the toolkit's Export/Import, which is worth doing now and then since clearing the site's data wipes them.
+
+---
+
+## Who's Here (toolkit only)
+
+The game's line above the chat only says *You are not alone here.* Who's Here adds the people to it, as a row of names:
+
+- **The same people `/look` lists**, kept current by the game itself without you typing anything. Anyone hidden from you stays hidden. You aren't in it.
+- **Arrivals light up** in gold for a few seconds. **People who leave** stay a moment, faded and struck through, then disappear. When you walk into a room, whoever is already there just appears.
+- **Names you know** show as names. **Strangers** show their short desc in italics. Hover someone for their short desc (and what the game shows, if you've named them).
+- **Your own names** from [Personal Names](#personal-names-notes--dossiers-toolkit-only) are used, with the ✦. **Click** someone for their dossier, **right-click** for Look, Whisper and Colour.
+- **N here ▾** folds the list away and opens it again (remembered). While it's folded, the button glows when someone arrives.
+
+A new short desc or a new name counts as someone leaving and someone else arriving, the same as it would for your character. In screenshot mode the list shows everyone's colour instead.
 
 ---
 

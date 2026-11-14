@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.19.0
+// @version      1.20.0
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.19.0';
+  const TK_VERSION = '1.20.0';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -234,6 +234,35 @@
     return m ? m[1] : null;
   }
 
+  // ---- Who's in the room, from the game's own room store. It's what /look
+  // lists under "You see:": people hidden or obscured aren't in it at all.
+  // The game replaces the list with every room update.
+  //
+  // Each occupant entry also has a `character_id` and `blushActive`. The
+  // toolkit consciously pretends those fields don't exist: they are never
+  // read, compared, stored, logged or used as a fallback for anything, ever,
+  // not even to recognise yourself. The ID stays the same behind a Mask of a
+  // Thousand Faces, an /alias or fleshcrafting, and blushActive tells who has
+  // the Blush of Health on; using either would show you what your character
+  // can't know. Only `name` (what you know them as; a stranger's is their
+  // short desc) and `short_desc` are copied out here, so nothing else ever
+  // leaves this function.
+  const stripCodes = s => String(s || '').replace(/\[([a-z]+)\]([\s\S]*?)\[\/\1\]/gi, '$2').replace(/\s+/g, ' ').trim();
+  function roomPeople() {
+    let room, list;
+    try {
+      room = findPlayInstance()?.proxy?.roomStore;
+      list = room?.occupants;
+    } catch (e) { return null; }
+    if (!Array.isArray(list)) return null;
+    const people = [];
+    for (const o of list) {
+      const name = stripCodes(typeof o === 'string' ? o : o?.name);
+      if (name) people.push({ name, desc: typeof o === 'string' ? '' : stripCodes(o?.short_desc) });
+    }
+    return { room: String(room.currentRoom?.key ?? ''), people };
+  }
+
   // ---- Popovers (dropdown menus). One open at a time.
 
   let currentPop = null;
@@ -296,7 +325,7 @@
   const core = {
     addStyle, el, copyScopeAttrs, onRoute, isPlay, sleep, waitFor,
     setNativeValue, pressEnter, findCommandInput, sendCommand,
-    findPlayInstance, getCharName, openPopover, togglePopover,
+    findPlayInstance, getCharName, roomPeople, openPopover, togglePopover,
   };
 
   // ==========================================================================
@@ -3546,7 +3575,7 @@
         const looks = looksFor();
         for (const [k, v] of Object.entries(looks)) out.set(k, { orig: v.orig || k, looked: true });
         for (const [k, o] of seenNames) if (!out.has(k)) out.set(k, { orig: o, looked: false });
-        return [...out].filter(([k]) => !index.has(k) && !isSelf(k) && k !== keyOf(except)).map(([, v]) => v);
+        return [...out].filter(([k]) => !index.has(k) && !isSelf(k) && k !== keyOf(except)).map(([k, v]) => ({ ...v, here: hereNow.has(k) }));
       }
       // ---- Right-click on a name: a short menu. /color is the game's own
       // command (only for people you've been introduced to, or "self").
@@ -3690,9 +3719,10 @@
         menu.append(c.el('div', { className: 'pbn-tk-menu__head', textContent: pickFor ? 'Who is this?' : 'People — ' + bookChar }));
         if (pickFor) menu.append(c.el('div', { className: 'pbn-nm-orig', textContent: pickFor }));
         const entries = Object.entries(book).filter(([, x]) => x !== self)
-          .map(([id, x]) => ({ id, x, label: x.name || x.looks[0] }));
-        if (pickFor) entries.push(...strangers(pickFor).map(v => ({ stranger: v, label: v.orig })));
-        entries.sort((a, b) => a.label.localeCompare(b.label));
+          .map(([id, x]) => ({ id, x, label: x.name || x.looks[0], here: x.looks.some(l => hereNow.has(keyOf(l))) }));
+        if (pickFor) entries.push(...strangers(pickFor).map(v => ({ stranger: v, label: v.orig, here: v.here })));
+        // Picking who someone is: whoever's in the room comes first.
+        entries.sort((a, b) => (pickFor ? (b.here ? 1 : 0) - (a.here ? 1 : 0) : 0) || a.label.localeCompare(b.label));
         if (!entries.length) {
           menu.append(c.el('div', { className: 'pbn-tk-menu__note', textContent: 'Nobody yet. Click a name or short desc in the chat to name that person or take notes on them.' }));
         } else {
@@ -3702,12 +3732,12 @@
           const rows = entries.map(({ id, x, stranger }) => {
             if (stranger) {
               const b = c.el('button', { type: 'button', className: 'pbn-tk-menu__item' },
-                c.el('span', { textContent: stranger.orig }, c.el('span', { className: 'pbn-nm-list__mark', textContent: '  ' + (stranger.looked ? 'looked at' : 'seen in the chat') })));
+                c.el('span', { textContent: stranger.orig }, c.el('span', { className: 'pbn-nm-list__mark', textContent: '  ' + (stranger.here ? '● here' : stranger.looked ? 'looked at' : 'seen in the chat') })));
               b.addEventListener('click', () => { linkPair(pickFor, stranger.orig); back(); });
               list.append(b);
               return [b, stranger.orig.toLowerCase()];
             }
-            const marks = [x.notes ? '✎ notes' : '', x.off ? 'showing game text' : ''].filter(Boolean).join(' · ');
+            const marks = [x.looks.some(l => hereNow.has(keyOf(l))) ? '● here' : '', x.notes ? '✎ notes' : '', x.off ? 'showing game text' : ''].filter(Boolean).join(' · ');
             const looks = x.name ? x.looks : x.looks.slice(1);
             const b = c.el('button', { type: 'button', className: 'pbn-tk-menu__item' },
               c.el('span', { textContent: x.name || x.looks[0] }, marks ? c.el('span', { className: 'pbn-nm-list__mark', textContent: '  ' + marks }) : null),
@@ -4222,11 +4252,14 @@
         if (!self && !colorName(orig)) { colorBtn.disabled = true; colorBtn.title = '/color only works on names of people you were introduced to'; }
         // The short desc is shown on its own line, so it isn't listed again.
         const display = displayOf(orig);
-        const shortDesc = namedLook(orig)?.sub || '';
+        // In the room right now: the desc they wear now beats the one from the last look.
+        const here = self ? null : hereAs(orig);
+        const shortDesc = (here && here.desc && keyOf(here.desc) !== keyOf(here.name) ? here.desc : '') || namedLook(orig)?.sub || '';
         const aliases = self ? ['yourself'] : looks.filter(l => keyOf(l) !== keyOf(display) && keyOf(l) !== keyOf(shortDesc));
         P.who.textContent = '';
         P.who.append(...[
-          c.el('div', { className: 'pbn-dos__top' }, c.el('div', { className: 'pbn-dos__name', textContent: display }),
+          c.el('div', { className: 'pbn-dos__top' }, c.el('div', { className: 'pbn-dos__name', textContent: display },
+            here ? c.el('span', { className: 'pbn-dos__here', textContent: 'here', title: 'In the room with you right now' + (keyOf(here.name) !== keyOf(display) ? ', as ' + here.name : '') }) : null),
             c.el('div', { className: 'pbn-dos__actions' }, lookBtn, whisperBtn, colorBtn, self ? null : edit)),
           self ? c.el('div', { className: 'pbn-dos__alias', textContent: 'yourself' })
             : aliases.length ? c.el('div', { className: 'pbn-dos__alias', textContent: (person?.name ? 'Seen as: ' : 'Also seen as: ') + aliases.join(' · ') }) : null,
@@ -4325,6 +4358,11 @@
           border: 1px solid #9e2b2b80; border-radius: 4px; font: inherit; font-size: .85em;
         }
         .pbn-dos__btn:hover { color: #e8ddd0; background: #5a121233; }
+        .pbn-dos__here {
+          display: inline-block; margin-left: 10px; padding: 1px 9px; vertical-align: middle; border: 1px solid #5fd38a88; border-radius: 999px;
+          color: #8fe0aa; font-size: .62em; font-weight: normal; letter-spacing: .5px; text-transform: uppercase;
+        }
+        .pbn-dos__here::before { content: '● '; }
         .pbn-dos__alias { margin-top: 3px; color: #9a8a7a; font-size: .9em; font-style: italic; overflow-wrap: anywhere; }
         #pbn-dossier .pbn-tk-menu__head {
           display: flex; justify-content: space-between; gap: 10px; margin: 18px 0 8px; padding: 0 0 4px;
@@ -4343,7 +4381,47 @@
         .pbn-dos__empty { color: #9a8a7a; font-style: italic; }
       `);
 
+      // ---- The people in the room right now (c.roomPeople: name and short
+      // desc only, never the ID). Their names count as seen, so they match in
+      // [SYSTEM] lines and screenshot mode before they've said anything; a
+      // name shown with its desc is linked like a look that shows both; and
+      // the dossier shows who's here and how they look right now.
+      const hereNow = new Map(); // look key -> { name, desc }
+      let roomSig = null;
+      function syncRoom() {
+        const r = c.roomPeople();
+        if (!r) return;
+        const sig = r.room + '\n' + r.people.map(p => p.name + '\t' + p.desc).join('\n');
+        if (sig === roomSig) return;
+        roomSig = sig;
+        const before = new Set(hereNow.keys());
+        hereNow.clear();
+        let fresh = false;
+        for (const p of r.people) {
+          if (isMe(p.name)) continue;
+          const k = keyOf(p.name);
+          hereNow.set(k, p);
+          if (!seenNames.has(k)) { seenNames.set(k, p.name); fresh = true; }
+          if (!before.has(k)) seenAt.set(k, ++seenTick); // they're here under this name, so Look/Whisper use it
+          if (p.desc && keyOf(p.desc) !== k && bookCharReady()) autoLink(p.name, p.desc);
+        }
+        if (fresh) { const cont = document.querySelector(CHAT); if (cont) processRow(cont); }
+        renderDossier(false);
+      }
+      const hereAs = orig => (personOf(orig)?.looks || [orig]).map(l => hereNow.get(keyOf(l))).find(Boolean) || null;
+
       namesApi = {
+        // For the Who's Here list.
+        isMe: orig => isMe(orig),
+        labelFor(orig) {
+          if (shot) { const a = anonFor(orig); return { text: a.label, color: a.color, anon: true }; }
+          const e = personOf(orig);
+          const mine = !!e?.name && view === 'mine' && !e.off;
+          return { text: mine ? e.name : orig, mine, noted: !!e?.notes && !mine };
+        },
+        open(trigger, orig) { if (CARDS) openDossier(orig); else openEditor(trigger, orig); },
+        openQuick,
+        censor: el => censorApi?.apply(el),
         openList,
         toggleView,
         showingMine: () => view === 'mine',
@@ -4368,6 +4446,7 @@
           syncChar();
           syncContainer();
           syncIdentities();
+          syncRoom();
         };
         run();
         tick = setInterval(run, 1000);
@@ -4382,11 +4461,187 @@
         clearInterval(tick);
         idSocket?.off('mention-identities', onIdentities);
         idSocket = null;
+        hereNow.clear(); roomSig = null;
         if (observer) observer.disconnect();
         if (typingObserver) typingObserver.disconnect();
         observer = null; container = null; typingObserver = null; column = null;
         document.removeEventListener('click', onChatClick);
         window.removeEventListener('storage', onStorage);
+      });
+    },
+  });
+
+  // ==========================================================================
+  // MODULE: Who's Here
+  // ==========================================================================
+
+  defineModule({
+    id: 'presence',
+    name: "Who's Here",
+    description: 'Turns the game\'s "You are not alone here." line above the chat into a list of who\'s in the room, kept current by the game itself. Arrivals light up, people who leave fade out.',
+    note: 'The same people /look lists; anyone hidden stays hidden. Click someone for their dossier, right-click for Look, Whisper and Colour. Your own names for people show here too, and screenshot mode turns them into colours.',
+    start(c) {
+      const STATE_KEY = 'pbn-presence'; // { open }
+      const BAR = '.room-presence-bar';
+      const NEW_MS = 12000;  // how long an arrival stays lit
+      const GONE_MS = 8000;  // how long someone who left stays, faded
+      const keyOf = s => String(s || '').replace(/\s+/g, ' ').trim().replace(/^\*+|\*+$/g, '').trim().toLowerCase();
+      let open = true;
+      try { open = JSON.parse(localStorage.getItem(STATE_KEY) || '{}')?.open !== false; } catch (e) { /* default */ }
+
+      // Names and descs only, from c.roomPeople() (which never hands out the
+      // occupants' IDs). A person is who the game shows: a new desc or name is
+      // someone leaving and someone arriving, as it is for your character.
+      const shown = new Map(); // look key -> { name, desc, el, since, goneAt, sig }
+      let room = null, box = null, toggle = null, list = null, timer = null, pingT = null;
+
+      function build() {
+        toggle = c.el('button', { type: 'button', className: 'pbn-who__toggle' });
+        toggle.addEventListener('click', () => {
+          open = !open;
+          try { localStorage.setItem(STATE_KEY, JSON.stringify({ open })); } catch (e) { /* session only */ }
+          render();
+        });
+        list = c.el('div', { className: 'pbn-who__list' });
+        list.setAttribute('role', 'list');
+        list.setAttribute('aria-label', "Who's here");
+        list.addEventListener('click', e => {
+          const p = e.target.closest('.pbn-who__p');
+          if (p && namesApi) namesApi.open(p, p.dataset.pbnWho);
+        });
+        list.addEventListener('contextmenu', e => {
+          const p = e.target.closest('.pbn-who__p');
+          if (!p || !namesApi) return;
+          e.preventDefault();
+          namesApi.openQuick(p, p.dataset.pbnWho);
+        });
+        // The game's bar announces itself to screen readers; the list doesn't.
+        box = c.el('div', { className: 'pbn-who' }, toggle, list);
+        box.setAttribute('aria-live', 'off');
+      }
+      const isMe = n => (namesApi ? namesApi.isMe(n) : keyOf(n) === keyOf(c.getCharName()));
+
+      function tick() {
+        const bar = document.querySelector(BAR);
+        if (!bar) return;
+        if (!box) build();
+        if (box.parentElement !== bar) { bar.classList.add('pbn-who-bar'); bar.append(box); }
+        const r = c.roomPeople();
+        if (!r) return;
+        const now = Date.now();
+        // Walking in (or loading the page): whoever is already there isn't news.
+        const quiet = r.room !== room;
+        if (quiet) { room = r.room; shown.forEach(s => s.el.remove()); shown.clear(); }
+        const live = new Set();
+        let arrived = false;
+        for (const p of r.people) {
+          if (isMe(p.name)) continue;
+          const k = keyOf(p.name);
+          live.add(k);
+          let s = shown.get(k);
+          if (!s) {
+            const el = c.el('button', { type: 'button', className: 'pbn-who__p' });
+            el.setAttribute('role', 'listitem');
+            s = { el, since: quiet ? 0 : now, goneAt: 0, sig: '' };
+            shown.set(k, s);
+            if (!quiet) arrived = true;
+          } else if (s.goneAt) { s.goneAt = 0; s.since = now; arrived = true; } // back again
+          s.name = p.name;
+          s.desc = p.desc;
+        }
+        for (const [k, s] of shown) {
+          if (live.has(k)) continue;
+          if (!s.goneAt) s.goneAt = now;
+          else if (now - s.goneAt > GONE_MS) { s.el.remove(); shown.delete(k); }
+        }
+        if (arrived && !open) {
+          toggle.classList.add('pbn-who__toggle--ping');
+          clearTimeout(pingT);
+          pingT = setTimeout(() => toggle?.classList.remove('pbn-who__toggle--ping'), 3200);
+        }
+        render(live.size);
+      }
+
+      function render(count = [...shown.values()].filter(s => !s.goneAt).length) {
+        if (!box) return;
+        const now = Date.now();
+        const label = count + ' here ' + (open ? '▾' : '▸');
+        if (toggle.textContent !== label) toggle.textContent = label;
+        toggle.title = open ? 'Hide the list' : "Show who's here";
+        toggle.setAttribute('aria-expanded', String(open));
+        list.hidden = !open || !shown.size;
+        if (list.hidden) return;
+        let prev = null;
+        for (const s of shown.values()) {
+          // Kept in the order people turned up; someone who left keeps their place until they fade.
+          if (s.el.parentElement !== list || s.el.previousElementSibling !== prev) (prev ? prev.after(s.el) : list.prepend(s.el));
+          prev = s.el;
+          const lab = namesApi ? namesApi.labelFor(s.name) : { text: s.name };
+          const stranger = !s.desc || keyOf(s.desc) === keyOf(s.name);
+          const fresh = s.since && now - s.since < NEW_MS;
+          const sig = [lab.text, lab.color, lab.mine, lab.noted, stranger, fresh, !!s.goneAt, s.desc].join('|');
+          if (s.sig === sig) continue;
+          s.sig = sig;
+          const el = s.el;
+          el.dataset.pbnWho = s.name;
+          el.textContent = lab.text;
+          el.className = 'pbn-who__p' + (lab.anon ? ' pbn-who__p--anon' : (stranger ? ' pbn-who__p--stranger' : '') + (lab.mine ? ' pbn-who__p--mine' : '') + (lab.noted ? ' pbn-who__p--noted' : ''))
+            + (fresh ? ' pbn-who__p--new' : '') + (s.goneAt ? ' pbn-who__p--gone' : '');
+          if (lab.anon) el.style.setProperty('--pbn-anon', lab.color); else el.style.removeProperty('--pbn-anon');
+          el.title = lab.anon ? '' : [
+            lab.text !== s.name ? 'The game shows: ' + s.name : '',
+            stranger ? '' : s.desc,
+            s.goneAt ? 'Just left' : fresh ? 'Just arrived' : '',
+            namesApi ? 'Click for their dossier · right-click for Look, Whisper, Colour' : '',
+          ].filter(Boolean).join('\n');
+          if (!lab.anon) namesApi?.censor(el);
+        }
+      }
+
+      c.addStyle(String.raw`
+        .room-presence-bar.pbn-who-bar { display: flex !important; flex-wrap: wrap !important; align-items: center; row-gap: 2px; }
+        .pbn-who { display: contents; }
+        .pbn-who__toggle {
+          margin-left: 10px; padding: 1px 11px; cursor: pointer; background: none; color: #c4b49a;
+          border: 1px solid #5a1212; border-radius: 999px; font: inherit; font-size: .95rem; line-height: 1.5;
+        }
+        .pbn-who__toggle:hover, .pbn-who__toggle:focus-visible { color: #f3e6cf; border-color: #e0b84a; outline: none; }
+        .pbn-who__toggle--ping { color: #f3e6cf; border-color: #e0b84a; animation: pbn-who-ping 1s ease-in-out 3; }
+        @keyframes pbn-who-ping { 50% { box-shadow: 0 0 0 3px #e0b84a55, 0 0 12px #e0b84a88; } }
+        .pbn-who__list {
+          display: flex; flex-wrap: wrap; gap: 6px; flex: 1 0 100%; box-sizing: border-box;
+          max-height: 7.8em; overflow-y: auto; padding: 6px 2px 4px; scrollbar-width: thin;
+        }
+        .pbn-who__list[hidden] { display: none; }
+        .pbn-who__p {
+          max-width: 24em; padding: 3px 12px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+          background: #1a0d0d; color: #e8ddd0; border: 1px solid #5a121299; border-radius: 999px;
+          font: inherit; font-size: 1rem; line-height: 1.45; text-align: left;
+          transition: opacity .8s, border-color .4s, box-shadow .6s;
+        }
+        .pbn-who__p:hover, .pbn-who__p:focus-visible { border-color: #e0b84a; outline: none; background: #2a1414; }
+        .pbn-who__p--stranger { color: #c4b49a; font-style: italic; }
+        .pbn-who__p--mine { color: #f3e6cf; }
+        .pbn-who__p--mine::after { content: ' ✦'; color: #e0b84a; font-size: .75em; font-style: normal; }
+        .pbn-who__p--noted { text-decoration: underline dotted #9a8a7a; text-underline-offset: 3px; }
+        .pbn-who__p--new { border-color: #e0b84a; box-shadow: 0 0 0 1px #e0b84a55, 0 0 12px #e0b84a44; animation: pbn-who-in .6s ease-out; }
+        @keyframes pbn-who-in { from { opacity: 0; transform: translateY(-4px) scale(.94); } }
+        .pbn-who__p--gone { opacity: .4; text-decoration: line-through; border-style: dashed; box-shadow: none; }
+        .pbn-who__p--anon { color: var(--pbn-anon) !important; font-weight: bold; font-style: normal; }
+        @media (prefers-reduced-motion: reduce) { .pbn-who__p, .pbn-who__toggle { animation: none !important; transition: none !important; } }
+      `);
+
+      c.onRoute(c.isPlay, () => {
+        tick();
+        timer = setInterval(tick, 400);
+      }, () => {
+        clearInterval(timer);
+        clearTimeout(pingT);
+        box?.parentElement?.classList.remove('pbn-who-bar');
+        box?.remove();
+        box = toggle = list = null;
+        shown.clear();
+        room = null;
       });
     },
   });
