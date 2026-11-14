@@ -523,6 +523,7 @@ The game's line above the chat only says *You are not alone here.* Who's Here ad
 - **Names you know** show as names. **Strangers** show their short desc in italics. Hover someone for their short desc (and what the game shows, if you've named them).
 - **Your own names** from [Personal Names](#personal-names-notes--dossiers-toolkit-only) are used, with the ✦. **Click** someone for their dossier, **right-click** for Look, Whisper and Colour.
 - **N here ▾** folds the list away and opens it again (remembered). While it's folded, the button glows when someone arrives.
+- **Crowds stay small.** The list shows two rows and scrolls after that (*Rows shown before the list scrolls* in the toolkit panel changes it). With more than ten people the names get a bit smaller. Long names and aliases are cut off with "…"; hover for the whole thing.
 
 A new short desc or a new name counts as someone leaving and someone else arriving, the same as it would for your character. In screenshot mode the list shows everyone's colour instead.
 

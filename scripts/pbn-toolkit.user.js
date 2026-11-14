@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.20.1
+// @version      1.20.2
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.20.1';
+  const TK_VERSION = '1.20.2';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -4480,8 +4480,13 @@
     name: "Who's Here",
     description: 'Turns the game\'s "You are not alone here." line above the chat into a list of who\'s in the room, kept current by the game itself. Arrivals light up, people who leave fade out.',
     note: 'The same people /look lists; anyone hidden stays hidden. Click someone for their dossier, right-click for Look, Whisper and Colour. Your own names for people show here too, and screenshot mode turns them into colours.',
+    settings: [
+      { key: 'rows', label: 'Rows shown before the list scrolls', type: 'number', default: 2, min: 1, max: 10 },
+    ],
     start(c) {
       const STATE_KEY = 'pbn-presence'; // { open }
+      const ROWS = Math.min(10, Math.max(1, Math.round(Number(opt('presence', 'rows', 2))) || 2));
+      const DENSE = 10; // more people than this: smaller names
       const BAR = '.room-presence-bar';
       const NEW_MS = 12000;  // how long an arrival stays lit
       const GONE_MS = 8000;  // how long someone who left stays, faded
@@ -4571,6 +4576,10 @@
         toggle.setAttribute('aria-expanded', String(open));
         list.hidden = !open || !shown.size;
         if (list.hidden) return;
+        // A crowd (a hosted Elysium) gets smaller names, and the list never
+        // grows past ROWS rows: the rest scrolls.
+        const dense = count > DENSE;
+        if (list.classList.contains('pbn-who__list--dense') !== dense) { list.classList.toggle('pbn-who__list--dense', dense); list.style.maxHeight = ''; }
         let prev = null;
         for (const s of shown.values()) {
           // Kept in the order people turned up; someone who left keeps their place until they fade.
@@ -4589,12 +4598,18 @@
             + (fresh ? ' pbn-who__p--new' : '') + (s.goneAt ? ' pbn-who__p--gone' : '');
           if (lab.anon) el.style.setProperty('--pbn-anon', lab.color); else el.style.removeProperty('--pbn-anon');
           el.title = lab.anon ? '' : [
-            lab.text !== s.name ? 'The game shows: ' + s.name : '',
+            lab.text !== s.name ? lab.text + '\nThe game shows: ' + s.name : s.name, // in full, since long ones are cut off
             stranger ? '' : s.desc,
             s.goneAt ? 'Just left' : fresh ? 'Just arrived' : '',
             namesApi ? 'Click for their dossier · right-click for Look, Whisper, Colour' : '',
           ].filter(Boolean).join('\n');
           if (!lab.anon) namesApi?.censor(el);
+        }
+        // Rows measured off a real name, so it fits the game's font size.
+        if (!list.style.maxHeight && prev) {
+          const h = prev.offsetHeight, cs = getComputedStyle(list);
+          const gap = parseFloat(cs.rowGap) || 0, pad = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+          if (h) list.style.maxHeight = Math.ceil(ROWS * h + (ROWS - 1) * gap + pad + 1) + 'px';
         }
       }
 
@@ -4613,15 +4628,19 @@
         @keyframes pbn-who-ping { 50% { box-shadow: 0 0 0 3px #e0b84a55, 0 0 12px #e0b84a88; } }
         .pbn-who__list {
           display: flex; flex-wrap: wrap; gap: 6px; flex: 1 0 100%; box-sizing: border-box;
-          max-height: 7.8em; overflow-y: auto; padding: 6px 2px 4px; scrollbar-width: thin;
+          overflow-y: auto; padding: 6px 2px 4px; scrollbar-width: thin;
         }
         .pbn-who__list[hidden] { display: none; }
+        /* Long names and aliases are cut off (the full text is in the tooltip);
+           a name never shrinks to fit the rest of a row, it moves to the next. */
         .pbn-who__p {
-          max-width: 24em; padding: 3px 12px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+          flex: 0 0 auto; max-width: min(18em, 100%); box-sizing: border-box; padding: 3px 12px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
           background: #1a0d0d; color: #e8ddd0; border: 1px solid #5a121299; border-radius: 999px;
           font: inherit; font-size: 1rem; line-height: 1.45; text-align: left;
           transition: opacity .8s, border-color .4s, box-shadow .6s;
         }
+        .pbn-who__list--dense { gap: 4px; }
+        .pbn-who__list--dense .pbn-who__p { max-width: min(13em, 100%); padding: 1px 9px; font-size: .92rem; }
         .pbn-who__p:hover, .pbn-who__p:focus-visible { border-color: #e0b84a; outline: none; background: #2a1414; }
         .pbn-who__p--stranger { color: #c4b49a; font-style: italic; }
         .pbn-who__p--mine { color: #f3e6cf; }
