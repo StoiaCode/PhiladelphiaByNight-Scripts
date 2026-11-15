@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.20.3
+// @version      1.20.4
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.20.3';
+  const TK_VERSION = '1.20.4';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -517,7 +517,7 @@
   defineModule({
     id: 'units',
     name: '24-Hour Clock & Celsius',
-    description: "Shows the game's clock in 24-hour time and temperatures in °C, in the room info panel (time and weather).",
+    description: "Shows the game's clock in 24-hour time and temperatures in °C: in the room info panel (time and weather) and in the game's replies to /time and /weather.",
     defaultOff: true,
     settings: [
       { key: 'time', label: '24-hour clock (8:10 PM → 20:10)', type: 'toggle', default: true },
@@ -526,7 +526,9 @@
     start(c) {
       const TIME = opt('units', 'time', true), TEMP = opt('units', 'temp', true);
       if (!TIME && !TEMP) return;
-      const SCOPE = '.weather-time-block, .weather-block, .users-here';
+      // The room panel, and the game's own world lines in the chat (/time,
+      // /weather). Never what players write.
+      const SCOPE = '.weather-time-block, .weather-block, .users-here, .chat-container p.world-msg';
       const pad = n => String(n).padStart(2, '0');
       const toC = f => Math.round((Number(f) - 32) * 5 / 9);
       // Converted text never matches again ("20:10", "12°C"), so re-running is harmless.

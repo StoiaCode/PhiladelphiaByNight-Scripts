@@ -559,7 +559,7 @@ How game time is worked out: one game night, 6:00 PM to 6:00 AM, runs over one r
 
 ## 24-Hour Clock & Celsius (toolkit only, off by default)
 
-Switch it on in the toolkit panel to see the room info panel's **Local Time** in 24-hour time (8:10 PM → 20:10, 12:05 AM → 00:05) and its weather temperatures in °C (54°F → 12°C). Each conversion has its own toggle. Only the time and weather box is touched; the chat and room descriptions stay as written.
+Switch it on in the toolkit panel to see the room info panel's **Local Time** in 24-hour time (8:10 PM → 20:10, 12:05 AM → 00:05) and its weather temperatures in °C (54°F → 12°C). The game's replies to `/time` and `/weather` in the chat are converted too. Each conversion has its own toggle. Only those are touched; what people write and room descriptions stay as written.
 
 ---
 
