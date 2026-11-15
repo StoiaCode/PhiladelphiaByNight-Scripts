@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.20.2
+// @version      1.20.3
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.20.2';
+  const TK_VERSION = '1.20.3';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -4524,13 +4524,16 @@
         box = c.el('div', { className: 'pbn-who' }, toggle, list);
         box.setAttribute('aria-live', 'off');
       }
-      const isMe = n => (namesApi ? namesApi.isMe(n) : keyOf(n) === keyOf(c.getCharName()));
+      const isMe = n => keyOf(n) === keyOf(c.getCharName()) || !!namesApi?.isMe(n);
 
       function tick() {
         const bar = document.querySelector(BAR);
         if (!bar) return;
         if (!box) build();
         if (box.parentElement !== bar) bar.append(box);
+        // Right after a reload the room can be known before your character
+        // is; drawing then would list you for a moment.
+        if (!c.findPlayInstance()?.proxy?.character?.name) return;
         const r = c.roomPeople();
         if (!r) return;
         const now = Date.now();
