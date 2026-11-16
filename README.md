@@ -455,7 +455,7 @@ Give people your own names. Someone you only know as *"a man in a grey coat"* in
 
 - your name for them and their other appearances (with a **Name · link…** button for renaming and "Same person as…"), and a green **here** badge while they're in the room with you. Their short desc underneath is the one they're wearing right now if they're here, otherwise the one from your last look,
 - **Colour** sets the colour of their name in your chat with the game's `/color` (see the right-click menu below),
-- **Look** sends `/look` at them right away (the new look replaces the saved one), and **Whisper** starts `/whisper <them> ` in the command box for you to finish. A line you had already typed (not a command) becomes the whisper's message. Both use the name or desc you last clicked or looked at for that person (anyone in the room can be named by their description), so after a reintroduction, clicking their new name switches the buttons over,
+- **Look** sends `/look` at them right away (the new look replaces the saved one), **Follow** sends `/follow` at them right away, and **Whisper** starts `/whisper <them> ` in the command box for you to finish. A line you had already typed (not a command) becomes the whisper's message. All three use the name or desc you last clicked or looked at for that person (anyone in the room can be named by their description), so after a reintroduction, clicking their new name switches the buttons over,
 - your notes on them, editable right there,
 - **their look**: the last `/look` you did on them, with the time you saw it. Links in it (people often put image links in their descs) are clickable and open in a new tab.
 
@@ -475,7 +475,7 @@ All three behaviours can be switched off in the toolkit panel: dossiers on click
 
 **Right-click** a name in the chat for a short menu:
 
-- **Look** and **Whisper**, as in the dossier. On your own name they use `me`.
+- **Look**, **Whisper** and **Follow**, as in the dossier. On your own name Look and Whisper use `me`, and Follow isn't offered.
 - **Colour ▸** opens the game's name colours: 16 palette colours plus warm gold, silver and pale white. Clicking one sends `/color <name> <colour>` (or `/color self …` on your own name); **Reset to default** sends `/color reset <name>`. The colours only change your own view. The game only accepts names of people you've been introduced to, so it's greyed out on short descs.
 - **Dossier** opens their dossier.
 - **Name, link, notes…** opens the full editor below in the same menu.
@@ -521,7 +521,7 @@ The game's line above the chat only says *You are not alone here.* Who's Here ad
 - **The same people `/look` lists**, kept current by the game itself without you typing anything. Anyone hidden from you stays hidden. You aren't in it.
 - **Arrivals light up** in gold for a few seconds. **People who leave** stay a moment, faded and struck through, then disappear. When you walk into a room, whoever is already there just appears.
 - **Names you know** show as names. **Strangers** show their short desc in italics. Hover someone for their short desc (and what the game shows, if you've named them).
-- **Your own names** from [Personal Names](#personal-names-notes--dossiers-toolkit-only) are used, with the ✦. **Click** someone for their dossier, **right-click** for Look, Whisper and Colour.
+- **Your own names** from [Personal Names](#personal-names-notes--dossiers-toolkit-only) are used, with the ✦. **Click** someone for their dossier, **right-click** for Look, Whisper, Follow and Colour.
 - **N here ▾** folds the list away and opens it again (remembered). While it's folded, the button glows when someone arrives.
 - **Crowds stay small.** The list shows two rows and scrolls after that (*Rows shown before the list scrolls* in the toolkit panel changes it). With more than ten people the names get a bit smaller. Long names and aliases are cut off with "…"; hover for the whole thing.
 

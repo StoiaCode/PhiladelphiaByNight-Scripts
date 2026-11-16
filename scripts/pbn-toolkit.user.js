@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.20.4
+// @version      1.20.5
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.20.4';
+  const TK_VERSION = '1.20.5';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -2796,7 +2796,7 @@
     description: "Click a name or short desc in the chat for that person's dossier: your own name for them, your notes (Markdown) and their last /look. Exact matches only, kept per character.",
     note: "Your names get a dotted gold underline and a ✦, people you only have notes on a grey dotted underline. The toolkit's section in the Settings tab has People & notes (everyone you've named or noted) and a switch between your names and the game's text.",
     settings: [
-      { key: 'cards', label: 'Dossiers: clicking a name opens their dossier window (right-click for Look, Whisper, Colour…)', type: 'toggle', default: true },
+      { key: 'cards', label: 'Dossiers: clicking a name opens their dossier window (right-click for Look, Whisper, Follow, Colour…)', type: 'toggle', default: true },
       { key: 'autoOpen', label: 'Open the dossier when you /look at someone', type: 'toggle', default: true },
       { key: 'fold', label: 'Fold /look descriptions in the chat into one line', type: 'toggle', default: true },
       { key: 'log', label: 'Save Log writes', type: 'select', default: 'game',
@@ -3639,6 +3639,7 @@
         menu.append(c.el('div', { className: 'pbn-nm-quick__who', textContent: me ? bookChar : displayOf(orig) }),
           item('Look', () => { close(); c.sendCommand('/look ' + target); }),
           item('Whisper', () => { close(); startWhisper(target); }));
+        if (!me) menu.append(item('Follow', () => { close(); c.sendCommand('/follow ' + target); }));
         const col = item('Colour ▸', () => { renderColors(menu, orig, () => { renderQuick(menu, orig); currentPop?.place(); }); currentPop?.place(); });
         if (!me && !colorName(orig)) { col.disabled = true; col.title = '/color only works on names of people you were introduced to'; }
         menu.append(col, sep());
@@ -4249,6 +4250,8 @@
         lookBtn.addEventListener('click', () => c.sendCommand('/look ' + target));
         const whisperBtn = c.el('button', { type: 'button', className: 'pbn-dos__btn', textContent: 'Whisper', title: 'Start /whisper ' + target + ' … in the command box' });
         whisperBtn.addEventListener('click', () => startWhisper(target));
+        const followBtn = self ? null : c.el('button', { type: 'button', className: 'pbn-dos__btn', textContent: 'Follow', title: 'Send /follow ' + target + ' now' });
+        followBtn?.addEventListener('click', () => c.sendCommand('/follow ' + target));
         const colorBtn = c.el('button', { type: 'button', className: 'pbn-dos__btn', textContent: 'Colour', title: 'Their name colour in the chat (/color)' });
         colorBtn.addEventListener('click', () => openColors(colorBtn, orig));
         if (!self && !colorName(orig)) { colorBtn.disabled = true; colorBtn.title = '/color only works on names of people you were introduced to'; }
@@ -4262,7 +4265,7 @@
         P.who.append(...[
           c.el('div', { className: 'pbn-dos__top' }, c.el('div', { className: 'pbn-dos__name', textContent: display },
             here ? c.el('span', { className: 'pbn-dos__here', textContent: 'here', title: 'In the room with you right now' + (keyOf(here.name) !== keyOf(display) ? ', as ' + here.name : '') }) : null),
-            c.el('div', { className: 'pbn-dos__actions' }, lookBtn, whisperBtn, colorBtn, self ? null : edit)),
+            c.el('div', { className: 'pbn-dos__actions' }, lookBtn, whisperBtn, followBtn, colorBtn, self ? null : edit)),
           self ? c.el('div', { className: 'pbn-dos__alias', textContent: 'yourself' })
             : aliases.length ? c.el('div', { className: 'pbn-dos__alias', textContent: (person?.name ? 'Seen as: ' : 'Also seen as: ') + aliases.join(' · ') }) : null,
           shortDesc ? c.el('div', { className: 'pbn-dos__alias', textContent: shortDesc }) : null,
@@ -4481,7 +4484,7 @@
     id: 'presence',
     name: "Who's Here",
     description: 'Turns the game\'s "You are not alone here." line above the chat into a list of who\'s in the room, kept current by the game itself. Arrivals light up, people who leave fade out.',
-    note: 'The same people /look lists; anyone hidden stays hidden. Click someone for their dossier, right-click for Look, Whisper and Colour. Your own names for people show here too, and screenshot mode turns them into colours.',
+    note: 'The same people /look lists; anyone hidden stays hidden. Click someone for their dossier, right-click for Look, Whisper, Follow and Colour. Your own names for people show here too, and screenshot mode turns them into colours.',
     settings: [
       { key: 'rows', label: 'Rows shown before the list scrolls', type: 'number', default: 2, min: 1, max: 10 },
     ],
@@ -4606,7 +4609,7 @@
             lab.text !== s.name ? lab.text + '\nThe game shows: ' + s.name : s.name, // in full, since long ones are cut off
             stranger ? '' : s.desc,
             s.goneAt ? 'Just left' : fresh ? 'Just arrived' : '',
-            namesApi ? 'Click for their dossier · right-click for Look, Whisper, Colour' : '',
+            namesApi ? 'Click for their dossier · right-click for Look, Whisper, Follow, Colour' : '',
           ].filter(Boolean).join('\n');
           if (!lab.anon) namesApi?.censor(el);
         }
