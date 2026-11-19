@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.20.5
+// @version      1.21.0
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.20.5';
+  const TK_VERSION = '1.21.0';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -4676,6 +4676,82 @@
   });
 
   // ==========================================================================
+  // MODULE: Playtime
+  // ==========================================================================
+
+  let playtimeApi = null;
+
+  defineModule({
+    id: 'playtime',
+    name: 'Playtime',
+    description: "Counts the time you spend on the play page, per character. After 30 minutes without touching the page (no mouse, keys, scrolling) it stops until you're back.",
+    note: 'Shown in the toolkit section of the Settings tab; hover it for every character. Two play tabs open at once count the time only once.',
+    actions: [{ label: 'Reset playtime…', run: () => playtimeApi?.reset() }],
+    start(c) {
+      const KEY = 'pbn-playtime'; // { until: ms timestamp counted up to (any tab), chars: { [character]: ms } }
+      const IDLE = 30 * 60 * 1000;
+      const TICK = 10 * 1000;
+      const load = () => {
+        try { const v = JSON.parse(localStorage.getItem(KEY) || 'null'); if (v && typeof v === 'object' && v.chars && typeof v.chars === 'object') return v; } catch (e) { /* fresh */ }
+        return { until: 0, chars: {} };
+      };
+      let lastInput = Date.now(); // loading the page counts as being here
+      let lastTick = Date.now();
+      let timer = null;
+      const touch = () => { lastInput = Date.now(); };
+      const INPUT = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart', 'scroll'];
+
+      // Counted: from the last tick (or what another tab already counted) up
+      // to now, but never past 30 minutes after the last input. A long gap
+      // between ticks (the computer slept) counts as nothing.
+      function tick() {
+        const now = Date.now();
+        const from = lastTick;
+        lastTick = now;
+        const who = c.getCharName();
+        if (!who || now - from > 3 * TICK) return;
+        const data = load();
+        const start = Math.max(from, Number(data.until) || 0);
+        const end = Math.min(now, lastInput + IDLE);
+        if (end <= start) return;
+        data.chars[who] = (Number(data.chars[who]) || 0) + (end - start);
+        data.until = end;
+        try { localStorage.setItem(KEY, JSON.stringify(data)); } catch (e) { return; }
+        show();
+      }
+      const fmt = ms => { const m = Math.floor(ms / 60000); return m < 60 ? m + 'm' : Math.floor(m / 60) + 'h ' + String(m % 60).padStart(2, '0') + 'm'; };
+      function show() {
+        const out = document.querySelector('.pbn-tk-playtime');
+        if (!out) return;
+        const { chars } = load();
+        const who = c.getCharName();
+        const total = Object.values(chars).reduce((a, b) => a + (Number(b) || 0), 0);
+        const text = 'Playtime: ' + (who ? who + ' ' + fmt(Number(chars[who]) || 0) + ' · ' : '') + 'all characters ' + fmt(total);
+        if (out.textContent !== text) out.textContent = text;
+        out.title = Object.entries(chars).sort((a, b) => b[1] - a[1]).map(([n, ms]) => n + ': ' + fmt(ms)).join('\n')
+          + '\n\nCounts while the play page is open and stops 30 minutes after you last touched it.';
+      }
+      playtimeApi = {
+        show,
+        reset() {
+          if (!confirm('Reset the playtime of every character to zero? This can\'t be undone.')) return;
+          try { localStorage.setItem(KEY, JSON.stringify({ until: Date.now(), chars: {} })); } catch (e) { /* nothing to reset */ }
+          show();
+        },
+      };
+      c.onRoute(c.isPlay, () => {
+        lastInput = lastTick = Date.now();
+        INPUT.forEach(t => window.addEventListener(t, touch, { capture: true, passive: true }));
+        timer = setInterval(tick, TICK);
+      }, () => {
+        tick();
+        clearInterval(timer);
+        INPUT.forEach(t => window.removeEventListener(t, touch, { capture: true }));
+      });
+    },
+  });
+
+  // ==========================================================================
   // MODULE: Roll Log
   // ==========================================================================
 
@@ -5375,6 +5451,7 @@
     .pbn-tk-btn--primary { background: #9e2b2b; color: #f3e6cf; border-color: #9e2b2b; }
     .pbn-tk-btn--primary:hover { background: #b33434; color: #fff; }
     .pbn-tk-section .pbn-tk-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 4px; }
+    .pbn-tk-section .pbn-tk-playtime { margin: 6px 0 4px; color: #c4b49a; font-size: 1rem; cursor: help; }
   `;
 
   function legacyState(id) { return document.documentElement.getAttribute(`data-pbn-legacy-${id}`); }
@@ -5614,7 +5691,9 @@
     if (status['roll-log'] === 'on' && rollLogApi) row.append(btn('Roll log', 'Statistics of your rolls for this character', () => rollLogApi.open()));
     if (status.reminders === 'on' && remindersApi) row.append(btn('Reminders', 'Reminders for any of your characters, in your time or game time', () => remindersApi.open()));
     section.append(divider, row);
+    if (status.playtime === 'on' && playtimeApi) { section.append(el('div', { className: 'pbn-tk-playtime' })); }
     tab.append(section);
+    playtimeApi?.show();
   }
 
   // ==========================================================================

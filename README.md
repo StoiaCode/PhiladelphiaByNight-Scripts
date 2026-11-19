@@ -38,6 +38,7 @@ require no account or server-side setup.
   - [The name editor](#the-name-editor)
   - [Screenshot mode](#screenshot-mode)
 - [Who's Here (toolkit only)](#whos-here-toolkit-only)
+- [Playtime (toolkit only)](#playtime-toolkit-only)
 - [Roll Log (toolkit only)](#roll-log-toolkit-only)
 - [Reminders (toolkit only)](#reminders-toolkit-only)
 - [24-Hour Clock & Celsius (toolkit only, off by default)](#24-hour-clock--celsius-toolkit-only-off-by-default)
@@ -77,7 +78,7 @@ press **Alt+Shift+T** anywhere on the site).
 
 New features only go into the toolkit, and several exist only there:
 [Personal Names, Notes & Dossiers](#personal-names-notes--dossiers-toolkit-only),
-[Who's Here](#whos-here-toolkit-only), [Roll Log](#roll-log-toolkit-only), [Reminders](#reminders-toolkit-only),
+[Who's Here](#whos-here-toolkit-only), [Playtime](#playtime-toolkit-only), [Roll Log](#roll-log-toolkit-only), [Reminders](#reminders-toolkit-only),
 [24-Hour Clock & Celsius](#24-hour-clock--celsius-toolkit-only-off-by-default),
 and parts of the others (marked *toolkit only* below).
 
@@ -526,6 +527,14 @@ The game's line above the chat only says *You are not alone here.* Who's Here ad
 - **Crowds stay small.** The list shows two rows and scrolls after that (*Rows shown before the list scrolls* in the toolkit panel changes it). With more than ten people the names get a bit smaller. Long names and aliases are cut off with "…"; hover for the whole thing.
 
 A new short desc or a new name counts as someone leaving and someone else arriving, the same as it would for your character. In screenshot mode the list shows everyone's colour instead.
+
+---
+
+## Playtime (toolkit only)
+
+Counts how long you've played, per character. It only counts while the play page is open, and stops once you haven't touched the page (mouse, keyboard, scrolling, touch) for 30 minutes; the next touch starts it again. Those last 30 minutes still count, since you may well have been reading along. Two play tabs open at the same time count each minute once.
+
+It shows as a line in the toolkit's section of the in-game **Settings** tab: *Playtime: Jane Doe 12h 04m · all characters 40h 17m*. Hover it for every character. **Reset playtime…** in the toolkit panel sets everything back to zero. Only time from now on counts; there's no way to know how long you played before installing it.
 
 ---
 
