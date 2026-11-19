@@ -532,7 +532,7 @@ A new short desc or a new name counts as someone leaving and someone else arrivi
 
 ## Playtime (toolkit only)
 
-Counts how long you've played, per character. It only counts while the play page is open, and only up to the last time you touched it (clicking, typing, scrolling or touch; just moving the mouse doesn't count, nor does the chat scrolling by itself). A quiet stretch counts once you touch the page again within 30 minutes, since you were probably reading along. If you're gone longer than that, the whole stretch counts as nothing, not even its first 30 minutes. Two play tabs open at the same time count each minute once.
+Counts how long you've played, per character. It only counts while the play page is open, and only up to the last time you touched it (clicking, typing, scrolling or touch; just moving the mouse doesn't count, nor does the chat scrolling by itself). A quiet stretch counts once you touch the page again within 30 minutes, since you were probably reading along. If you're gone longer than that, the whole stretch counts as nothing, not even its first 30 minutes.
 
 It shows as a line in the toolkit's section of the in-game **Settings** tab: *Playtime: Jane Doe 12h 04m · all characters 40h 17m*. Hover it for every character. **Reset playtime…** in the toolkit panel sets everything back to zero. Only time from now on counts; there's no way to know how long you played before installing it.
 

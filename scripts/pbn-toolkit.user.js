@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.21.3
+// @version      1.21.4
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.21.3';
+  const TK_VERSION = '1.21.4';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -4685,7 +4685,7 @@
     id: 'playtime',
     name: 'Playtime',
     description: "Counts the time you spend on the play page, per character. Time away from the page (no clicks, typing or scrolling) counts if you're back within 30 minutes, and not at all if you're gone longer.",
-    note: 'Shown in the toolkit section of the Settings tab; hover it for every character. Two play tabs open at once count the time only once.',
+    note: 'Shown in the toolkit section of the Settings tab; hover it for every character.',
     actions: [{ label: 'Reset playtime…', run: () => playtimeApi?.reset() }],
     start(c) {
       const KEY = 'pbn-playtime'; // { until: ms timestamp counted up to (any tab), chars: { [character]: ms } }
