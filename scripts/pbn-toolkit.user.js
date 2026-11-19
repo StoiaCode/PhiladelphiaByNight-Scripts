@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.21.2
+// @version      1.21.3
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.21.2';
+  const TK_VERSION = '1.21.3';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -4684,7 +4684,7 @@
   defineModule({
     id: 'playtime',
     name: 'Playtime',
-    description: "Counts the time you spend on the play page, per character. Time away from the page (no mouse, keys, scrolling) counts if you're back within 30 minutes, and not at all if you're gone longer.",
+    description: "Counts the time you spend on the play page, per character. Time away from the page (no clicks, typing or scrolling) counts if you're back within 30 minutes, and not at all if you're gone longer.",
     note: 'Shown in the toolkit section of the Settings tab; hover it for every character. Two play tabs open at once count the time only once.',
     actions: [{ label: 'Reset playtime…', run: () => playtimeApi?.reset() }],
     start(c) {
@@ -4701,24 +4701,20 @@
       let lastInput = Date.now(); // loading the page counts as being here
       let countFrom = lastInput;  // nothing before this counts (page load, or the end of an away gap)
       let timer = null;
-      // Only real input from you counts. Not "scroll": the chat scrolls itself
-      // whenever a message arrives, so a busy room would keep you "present"
-      // while you're away. Not script-made events either (isTrusted is false
-      // for those, e.g. the toolkit pressing Enter for you), and a pointer
-      // "move" that didn't move: browsers send those when the page shifts
-      // under a still mouse.
-      let px = null, py = null;
+      // Being there means clicking, typing or scrolling (wheel, touch;
+      // dragging the scrollbar is a click). Just moving the mouse doesn't
+      // count: nobody plays by only moving it, and it fires whenever the
+      // pointer crosses the window on its way somewhere else. Not "scroll"
+      // either: the chat scrolls itself whenever a message arrives. Nor
+      // script-made events (isTrusted is false, e.g. the toolkit pressing
+      // Enter for a command button).
       const touch = e => {
         if (!e.isTrusted) return;
-        if (e.type === 'pointermove') {
-          if (e.screenX === px && e.screenY === py) return;
-          px = e.screenX; py = e.screenY;
-        }
         const now = Date.now();
         if (now - lastInput > IDLE) countFrom = now;
         lastInput = now;
       };
-      const INPUT = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart'];
+      const INPUT = ['pointerdown', 'keydown', 'wheel', 'touchstart'];
 
       // Counted: from where this tab (or another one) stopped counting, up to
       // the last input.
