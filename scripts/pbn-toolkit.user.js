@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.21.1
+// @version      1.21.2
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.21.1';
+  const TK_VERSION = '1.21.2';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -4701,12 +4701,24 @@
       let lastInput = Date.now(); // loading the page counts as being here
       let countFrom = lastInput;  // nothing before this counts (page load, or the end of an away gap)
       let timer = null;
-      const touch = () => {
+      // Only real input from you counts. Not "scroll": the chat scrolls itself
+      // whenever a message arrives, so a busy room would keep you "present"
+      // while you're away. Not script-made events either (isTrusted is false
+      // for those, e.g. the toolkit pressing Enter for you), and a pointer
+      // "move" that didn't move: browsers send those when the page shifts
+      // under a still mouse.
+      let px = null, py = null;
+      const touch = e => {
+        if (!e.isTrusted) return;
+        if (e.type === 'pointermove') {
+          if (e.screenX === px && e.screenY === py) return;
+          px = e.screenX; py = e.screenY;
+        }
         const now = Date.now();
         if (now - lastInput > IDLE) countFrom = now;
         lastInput = now;
       };
-      const INPUT = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart', 'scroll'];
+      const INPUT = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart'];
 
       // Counted: from where this tab (or another one) stopped counting, up to
       // the last input.
