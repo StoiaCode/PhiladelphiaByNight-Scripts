@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.21.0
+// @version      1.21.1
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.21.0';
+  const TK_VERSION = '1.21.1';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -4684,7 +4684,7 @@
   defineModule({
     id: 'playtime',
     name: 'Playtime',
-    description: "Counts the time you spend on the play page, per character. After 30 minutes without touching the page (no mouse, keys, scrolling) it stops until you're back.",
+    description: "Counts the time you spend on the play page, per character. Time away from the page (no mouse, keys, scrolling) counts if you're back within 30 minutes, and not at all if you're gone longer.",
     note: 'Shown in the toolkit section of the Settings tab; hover it for every character. Two play tabs open at once count the time only once.',
     actions: [{ label: 'Reset playtime…', run: () => playtimeApi?.reset() }],
     start(c) {
@@ -4695,24 +4695,27 @@
         try { const v = JSON.parse(localStorage.getItem(KEY) || 'null'); if (v && typeof v === 'object' && v.chars && typeof v.chars === 'object') return v; } catch (e) { /* fresh */ }
         return { until: 0, chars: {} };
       };
+      // Time counts only up to your last input. A gap between two inputs
+      // counts if it was 30 minutes or less (reading along); a longer one
+      // counts not at all, not even its first 30 minutes.
       let lastInput = Date.now(); // loading the page counts as being here
-      let lastTick = Date.now();
+      let countFrom = lastInput;  // nothing before this counts (page load, or the end of an away gap)
       let timer = null;
-      const touch = () => { lastInput = Date.now(); };
+      const touch = () => {
+        const now = Date.now();
+        if (now - lastInput > IDLE) countFrom = now;
+        lastInput = now;
+      };
       const INPUT = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart', 'scroll'];
 
-      // Counted: from the last tick (or what another tab already counted) up
-      // to now, but never past 30 minutes after the last input. A long gap
-      // between ticks (the computer slept) counts as nothing.
+      // Counted: from where this tab (or another one) stopped counting, up to
+      // the last input.
       function tick() {
-        const now = Date.now();
-        const from = lastTick;
-        lastTick = now;
         const who = c.getCharName();
-        if (!who || now - from > 3 * TICK) return;
+        if (!who) return;
         const data = load();
-        const start = Math.max(from, Number(data.until) || 0);
-        const end = Math.min(now, lastInput + IDLE);
+        const start = Math.max(countFrom, Number(data.until) || 0);
+        const end = lastInput;
         if (end <= start) return;
         data.chars[who] = (Number(data.chars[who]) || 0) + (end - start);
         data.until = end;
@@ -4729,7 +4732,7 @@
         const text = 'Playtime: ' + (who ? who + ' ' + fmt(Number(chars[who]) || 0) + ' · ' : '') + 'all characters ' + fmt(total);
         if (out.textContent !== text) out.textContent = text;
         out.title = Object.entries(chars).sort((a, b) => b[1] - a[1]).map(([n, ms]) => n + ': ' + fmt(ms)).join('\n')
-          + '\n\nCounts while the play page is open and stops 30 minutes after you last touched it.';
+          + '\n\nCounts while the play page is open. Time without touching it counts only if you were back within 30 minutes.';
       }
       playtimeApi = {
         show,
@@ -4740,7 +4743,7 @@
         },
       };
       c.onRoute(c.isPlay, () => {
-        lastInput = lastTick = Date.now();
+        lastInput = countFrom = Date.now();
         INPUT.forEach(t => window.addEventListener(t, touch, { capture: true, passive: true }));
         timer = setInterval(tick, TICK);
       }, () => {
