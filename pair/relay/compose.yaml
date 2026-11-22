@@ -1,0 +1,23 @@
+services:
+  pbn-pair-relay:
+    build: .
+    image: pbn-pair-relay
+    pull_policy: build
+    container_name: pbn-pair-relay
+    restart: unless-stopped
+    environment:
+      - ALLOWED_ORIGINS=https://philadelphiabynight.net
+    # Locked down: nothing to write, no extra privileges, small limits.
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 64m
+    pids_limit: 32
+    # No published ports; the reverse proxy reaches this container by name on port 8080.
+    expose:
+      - "8080"
+
+networks:
+  default:
+    external: true
+    name: pangolin
