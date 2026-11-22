@@ -53,7 +53,12 @@ WebSockets enabled and TLS in front. `GET /health` answers `ok`.
 - **The room name** is a SHA-256 hash of the shared key, so the server can't
   work the key out from it.
 - **Nothing is stored.** Rooms live in memory and vanish when the last person
-  leaves. No content is logged.
+  leaves.
+- **The log** (`docker logs pbn-pair-relay`) is one line at startup and one
+  per hour, counts only, no room names or addresses:
+  `rooms=1 connections=2 | last hour: joined=2 refused=0 flooding=0 too_big=0`.
+  Your reverse proxy may keep its own access log, with each connection's IP
+  and the room hash from the URL.
 - **Limits:** 5 people per room, 200 rooms, 2 KB per message, 30 messages per
   10 seconds per connection (more closes it), dead connections dropped after a
   missed ping. Only pages from `https://philadelphiabynight.net` may connect

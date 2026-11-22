@@ -21,6 +21,10 @@ const PING_MS = 30_000;     // dead connections are dropped after one missed pon
 
 const rooms = new Map(); // room -> Set<WebSocket>
 
+// Hourly status line: counts only. No room names, no addresses, no content.
+const STATS_MS = Number(process.env.STATS_MS) || 60 * 60 * 1000;
+let stats = { joined: 0, refused: 0, flooding: 0, tooBig: 0 };
+
 const server = http.createServer((req, res) => {
   const ok = req.url === '/health';
   res.writeHead(ok ? 200 : 404, { 'content-type': 'text/plain' });
@@ -30,7 +34,7 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_BYTES, perMessageDeflate: false });
 
 server.on('upgrade', (req, socket, head) => {
-  const reject = status => { socket.write(`HTTP/1.1 ${status}\r\nConnection: close\r\n\r\n`); socket.destroy(); };
+  const reject = status => { stats.refused++; socket.write(`HTTP/1.1 ${status}\r\nConnection: close\r\n\r\n`); socket.destroy(); };
   if (!ORIGINS.has(req.headers.origin)) return reject('403 Forbidden');
   let room = '';
   try { room = new URL(req.url, 'http://relay').searchParams.get('room') || ''; } catch (e) { /* bad url */ }
@@ -51,6 +55,7 @@ function join(ws, room) {
   let peers = rooms.get(room);
   if (!peers) rooms.set(room, (peers = new Set()));
   peers.add(ws);
+  stats.joined++;
   ws.alive = true;
   ws.hits = [];
   ws.on('pong', () => { ws.alive = true; });
@@ -59,7 +64,11 @@ function join(ws, room) {
     const now = Date.now();
     ws.hits = ws.hits.filter(t => now - t < RATE_MS);
     ws.hits.push(now);
-    if (ws.hits.length > RATE_N) { ws.close(1008, 'too fast'); return; }
+    if (ws.hits.length > RATE_N) {
+      if (!ws.flooded) { ws.flooded = true; stats.flooding++; } // once per connection; more arrive before it's closed
+      ws.close(1008, 'too fast');
+      return;
+    }
     const text = data.toString();
     for (const p of peers) if (p !== ws && p.readyState === 1) p.send(text);
   });
@@ -67,7 +76,10 @@ function join(ws, room) {
     peers.delete(ws);
     if (peers.size) announce(peers); else rooms.delete(room);
   });
-  ws.on('error', () => ws.terminate());
+  ws.on('error', err => {
+    if (err?.code === 'WS_ERR_UNSUPPORTED_MESSAGE_LENGTH') stats.tooBig++; // over MAX_BYTES
+    ws.terminate();
+  });
   announce(peers);
 }
 
@@ -81,5 +93,13 @@ setInterval(() => {
   }
 }, PING_MS);
 
-server.listen(PORT, () => console.log(`pbn-pair relay listening on ${PORT}`));
+setInterval(() => {
+  let conns = 0;
+  for (const peers of rooms.values()) conns += peers.size;
+  console.log(`${new Date().toISOString()} rooms=${rooms.size} connections=${conns}`
+    + ` | last hour: joined=${stats.joined} refused=${stats.refused} flooding=${stats.flooding} too_big=${stats.tooBig}`);
+  stats = { joined: 0, refused: 0, flooding: 0, tooBig: 0 };
+}, STATS_MS);
+
+server.listen(PORT, () => console.log(`${new Date().toISOString()} pbn-pair relay listening on ${PORT}`));
 process.on('SIGTERM', () => { wss.clients.forEach(ws => ws.terminate()); server.close(() => process.exit(0)); });
