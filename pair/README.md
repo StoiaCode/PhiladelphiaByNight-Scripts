@@ -30,6 +30,15 @@ bottom-left corner:
 - **Your name for them** — what the others see (*✋ Jane takes it*). Empty uses
   your character's name from the journal.
 
+**Disconnect** in the same dialog stops it (the button reads *Pair · off*) and
+it stays off, also after a reload, until **Connect**. **Forget key** removes
+the key from this browser.
+
+A key never expires; the server doesn't know it, only its hash as the room
+name. To lock someone out, or if a key ever leaks, **Generate** a new one and
+send it only to the people who should have it. The old key then leads to an
+empty room.
+
 ## The relay
 
 A ~100-line Node server (one dependency, [`ws`](https://github.com/websockets/ws))

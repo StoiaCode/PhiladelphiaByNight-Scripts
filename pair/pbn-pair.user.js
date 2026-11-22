@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Pair
 // @namespace    stoia.red
-// @version      0.1.1
+// @version      0.2.0
 // @description  For players who play together: claim a chat line ("I'll answer this one") or hand it to your partner, and they see it on their screen. Encrypted, through your own small relay.
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -124,7 +124,7 @@
   async function connect() {
     clearTimeout(retryT);
     if (ws) { ws.onclose = null; ws.close(); ws = null; }
-    if (!wanted || !cfg.server || !cfg.secret) { status = 'off'; renderPill(); return; }
+    if (!wanted || !cfg.server || !cfg.secret || cfg.off) { status = cfg.off && cfg.server && cfg.secret ? 'paused' : 'off'; renderPill(); return; }
     status = 'connecting'; renderPill();
     try { crypt = await derive(cfg.secret); } catch (e) { status = 'error'; renderPill(); return; }
     const sock = new WebSocket(cfg.server.replace(/\/+$/, '') + '/?room=' + crypt.room);
@@ -225,7 +225,7 @@
     const who = [...names.keys()].slice(0, peers).join(', ');
     const state = toyou ? 'toyou' : status;
     const text = toyou ? `→ ${toyou} for you` : status === 'on' ? (peers ? `● Pair · ${who || peers + ' connected'}` : '● Pair · waiting')
-      : status === 'connecting' ? '○ Pair · connecting…' : status === 'error' ? '✕ Pair' : '○ Pair · set up';
+      : status === 'connecting' ? '○ Pair · connecting…' : status === 'error' ? '✕ Pair' : status === 'paused' ? '○ Pair · off' : '○ Pair · set up';
     // Only when something changed: the page watcher would see every rewrite and repaint again.
     if (pill.dataset.state !== state) pill.dataset.state = state;
     if (pill.textContent !== text) pill.textContent = text;
@@ -233,6 +233,11 @@
   }
 
   // ---- Settings
+  function store(next) {
+    try { localStorage.setItem(CFG_KEY, JSON.stringify(next)); } catch (e) { return false; }
+    cfg = next;
+    return true;
+  }
   function openSettings() {
     document.getElementById('pbn-pair-dlg')?.remove();
     const server = el('input', { type: 'url', value: cfg.server || '', placeholder: 'wss://pair.example.org', spellcheck: false });
@@ -245,19 +250,28 @@
       const s = server.value.trim();
       if (s && !/^wss:\/\/[^\s/?#]+/.test(s) && !/^ws:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/.test(s)) { err.textContent = 'The server address has to start with wss://'; return; }
       if (secret.value.trim() && secret.value.trim().length < 32) { err.textContent = 'That key is too short: use Generate, or paste the one your partner sent.'; return; }
-      cfg = { server: s, secret: secret.value.trim(), name: name.value.trim() };
-      try { localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); } catch (e) { err.textContent = "Couldn't save (storage blocked)."; return; }
+      if (!store({ server: s, secret: secret.value.trim(), name: name.value.trim(), off: false })) { err.textContent = "Couldn't save (storage blocked)."; return; }
       dlg.remove();
       connect();
     });
     const close = btn('Cancel', '', () => dlg.remove());
+    // Disconnect stays disconnected (also after reloads) until Connect.
+    const ready = cfg.server && cfg.secret;
+    const toggle = !ready ? null : cfg.off
+      ? btn('Connect', 'Connect again with the saved server and key', () => { store({ ...cfg, off: false }); dlg.remove(); connect(); })
+      : btn('Disconnect', 'Stop sharing claims until you connect again', () => { store({ ...cfg, off: true }); marks.clear(); dlg.remove(); connect(); paint(); });
+    // Forgetting the key: this browser leaves the room for good; the others keep it.
+    const forget = !cfg.secret ? null : btn('Forget key', 'Remove the shared key from this browser', () => {
+      if (!confirm('Remove the shared key from this browser? To join again you need it from your partner (or a new one).')) return;
+      store({ ...cfg, secret: '' }); marks.clear(); dlg.remove(); connect(); paint();
+    });
     const row = (label, ...kids) => el('label', {}, el('span', { textContent: label }), el('div', {}, ...kids));
     const dlg = el('div', { id: 'pbn-pair-dlg' },
       el('div', { className: 'pbn-pair-box' },
         el('h3', { textContent: 'PbN Pair' }),
         el('p', { textContent: 'Everyone playing together uses the same server and the same key. The key never leaves your browser: everything is encrypted with it before it goes to the server.' }),
         row('Server', server), row('Shared key', secret, gen, copy), row('Your name for them', name),
-        err, el('div', { className: 'pbn-pair-actions' }, close, save)));
+        err, el('div', { className: 'pbn-pair-actions' }, toggle, forget, el('span', { className: 'pbn-pair-gap' }), close, save)));
     dlg.addEventListener('click', e => { if (e.target === dlg) dlg.remove(); });
     document.body.append(dlg);
     (cfg.server ? secret : server).focus();
@@ -297,7 +311,8 @@
     .pbn-pair-box input { flex: 1; min-width: 0; padding: 6px 9px; background: #121216; color: #e8d8b8; border: 1px solid #3a3a44; border-radius: 4px; font: inherit; }
     .pbn-pair-box input:focus { outline: none; border-color: #e0b84a; }
     .pbn-pair-err { min-height: 1.3em; color: #f0906a; font-size: .9rem; }
-    .pbn-pair-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+    .pbn-pair-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+    .pbn-pair-gap { flex: 1; }
   ` });
 
   // ---- Only on the play page.
