@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Pair
 // @namespace    stoia.red
-// @version      0.1.0
+// @version      0.1.1
 // @description  For players who play together: claim a chat line ("I'll answer this one") or hand it to your partner, and they see it on their screen. Encrypted, through your own small relay.
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -35,7 +35,11 @@
   const myName = () => (cfg.name || '').trim()
     || document.querySelector('.journal-title')?.textContent.trim().match(/^(.+?)['’]s Journal$/)?.[1] || 'Partner';
 
-  // ---- Lines. The key is a hash of the line's text minus the speaker.
+  // ---- Lines. Only what players say and emote: those have a speaker
+  // (<strong><span class="chat-name-…">) or the spoken text in .msg-body.
+  // [SYSTEM], [LOCATION], looks, item notes and overheard whispers have neither.
+  const isUserLine = row => !!row.querySelector('.msg-body, strong [class*="chat-name"]');
+  // The key is a hash of the line's text minus the speaker.
   function lineText(row) {
     const x = row.cloneNode(true);
     // The PbN Toolkit's word filter and screenshot mode change what's shown; read the real words.
@@ -60,6 +64,7 @@
   }
   const keyCache = new WeakMap(); // row -> [text, key]
   function keyOf(row) {
+    if (!isUserLine(row)) return null;
     const t = lineText(row);
     const c = keyCache.get(row);
     if (c && c[0] === t) return c[1];

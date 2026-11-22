@@ -10,7 +10,7 @@ the introductions. Hover a chat line and:
   jump to the line).
 - **✕ Drop** — take a claim or hand-over back.
 
-Claims and hand-overs fade after 10 minutes. Everyone in the room needs the
+Only what players say and emote can be claimed, not `[SYSTEM]` lines, looks and the like. Claims and hand-overs fade after 10 minutes. Everyone in the room needs the
 script; nobody else sees anything.
 
 A line is recognised by what was said, without the speaker's name (that
