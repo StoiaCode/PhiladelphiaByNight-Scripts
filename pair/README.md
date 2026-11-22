@@ -13,6 +13,15 @@ the introductions. Hover a chat line and:
 Only what players say and emote can be claimed, not `[SYSTEM]` lines, looks and the like. Claims and hand-overs fade after 10 minutes. Everyone in the room needs the
 script; nobody else sees anything.
 
+When two of you act on the same line:
+
+- **A claim beats a hand-over.** Hand it over and your partner claims it: it's theirs.
+- **Two claims at once:** the first one counts on every screen; the other person
+  sees *✋ Jane was first* instead of their own claim.
+- **Both handed over** (or you hand back what was handed to you): the line turns
+  orange on both screens, *⚠ both handed over*, so one of you grabs it. **✕ Drop**
+  withdraws your hand-over and leaves theirs standing.
+
 A line is recognised by what was said, without the speaker's name (that
 differs between viewers: a name for one, a short desc for the other). If one
 of you doesn't understand a language, the line looks different for you two,

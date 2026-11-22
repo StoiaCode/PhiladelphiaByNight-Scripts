@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Pair
 // @namespace    stoia.red
-// @version      0.2.0
+// @version      0.3.0
 // @description  For players who play together: claim a chat line ("I'll answer this one") or hand it to your partner, and they see it on their screen. Encrypted, through your own small relay.
 // @match        https://philadelphiabynight.net/*
 // @run-at       document-idle
@@ -82,7 +82,13 @@
   // ---- State, per line key: { state: 'mine'|'theirs'|'toyou'|'passed', who, at }
   const marks = new Map();
   function setMark(k, m) { if (m) marks.set(k, m); else marks.delete(k); paint(); }
-  const LABEL = { mine: () => '✋ you', theirs: m => '✋ ' + m.who, toyou: m => '→ ' + m.who + ': yours', passed: () => '→ handed over' };
+  const LABEL = {
+    mine: () => '✋ you',
+    theirs: m => '✋ ' + m.who + (m.first ? ' was first' : ''),
+    toyou: m => '→ ' + m.who + ': yours',
+    passed: () => '→ handed over',
+    both: () => '⚠ both handed over',
+  };
   function paint() {
     const now = Date.now();
     for (const [k, m] of marks) if (now - m.at > CLAIM_MS) marks.delete(k);
@@ -161,21 +167,31 @@
     if (m.t === 'here') { renderPill(); return; }
     if (typeof m.k !== 'string' || m.k.length > 20) return;
     const cur = marks.get(m.k);
+    // Two people acting on one line:
+    // - a claim always beats a hand-over ("I'll take it" settles it);
+    // - two claims: the earlier one wins on every screen, and the one who lost is told;
+    // - two hand-overs: nobody would answer, so both get a warning.
     if (m.t === 'claim') {
-      // Both claimed at once: the earlier claim wins, on both screens.
-      if (cur?.state === 'mine' && (cur.at < m.at || (cur.at === m.at && myName() < who))) return;
-      setMark(m.k, { state: 'theirs', who, at: m.at });
+      if (cur?.state === 'mine') {
+        if (cur.at < m.at || (cur.at === m.at && myName() < who)) return; // mine was first; they'll see "was first"
+        setMark(m.k, { state: 'theirs', who, at: m.at, first: true });
+      } else setMark(m.k, { state: 'theirs', who, at: m.at });
     } else if (m.t === 'pass') {
-      setMark(m.k, { state: 'toyou', who, at: m.at });
+      if (cur?.state === 'mine' || cur?.state === 'theirs') return; // someone already took it
+      setMark(m.k, cur?.state === 'passed' || cur?.state === 'both' ? { state: 'both', who, at: m.at } : { state: 'toyou', who, at: m.at });
     } else if (m.t === 'drop') {
       if (cur && cur.who === who && (cur.state === 'theirs' || cur.state === 'toyou')) setMark(m.k, null);
+      else if (cur?.state === 'both' && cur.who === who) setMark(m.k, { state: 'passed', who: myName(), at: Date.now() }); // only my hand-over is left
     }
   }
   function act(row, t) {
     const k = keyOf(row);
     if (!k) return;
+    const cur = marks.get(k);
     if (t === 'claim') setMark(k, { state: 'mine', who: myName(), at: Date.now() });
-    else if (t === 'pass') setMark(k, { state: 'passed', who: myName(), at: Date.now() });
+    // Handing back a line that was handed to me: now nobody has it.
+    else if (t === 'pass') setMark(k, cur?.state === 'toyou' ? { state: 'both', who: cur.who, at: Date.now() } : { state: 'passed', who: myName(), at: Date.now() });
+    else if (cur?.state === 'both') setMark(k, { state: 'toyou', who: cur.who, at: Date.now() }); // my hand-over is withdrawn, theirs stands
     else setMark(k, null);
     send({ t, k });
   }
@@ -194,8 +210,8 @@
     const state = m?.state;
     if (state === 'theirs') { bar.hidden = true; return; }
     if (state !== 'mine') bar.append(btn('✋ Mine', "I'll answer this one", () => { act(row, 'claim'); showBar(row); }));
-    if (state === 'mine' || state === 'passed') bar.append(btn('✕ Drop', 'Take back your claim or hand-over', () => { act(row, 'drop'); showBar(row); }));
-    if (state !== 'passed' && state !== 'toyou') bar.append(btn('→ Yours', 'Hand this one to your partner', () => { act(row, 'pass'); showBar(row); }));
+    if (state === 'mine' || state === 'passed' || state === 'both') bar.append(btn('✕ Drop', 'Take back your claim or hand-over', () => { act(row, 'drop'); showBar(row); }));
+    if (state !== 'passed' && state !== 'both') bar.append(btn('→ Yours', state === 'toyou' ? 'Hand it back' : 'Hand this one to your partner', () => { act(row, 'pass'); showBar(row); }));
     const r = row.getBoundingClientRect();
     bar.hidden = false;
     bar.style.top = Math.max(4, r.top + 2) + 'px';
@@ -215,13 +231,13 @@
   // ---- Status pill: connection, partners, and lines handed to you (click to jump there).
   const pill = el('button', { type: 'button', id: 'pbn-pair-pill' });
   pill.addEventListener('click', () => {
-    const toyou = [...marks.entries()].filter(([, m]) => m.state === 'toyou').sort((a, b) => b[1].at - a[1].at)[0];
+    const toyou = [...marks.entries()].filter(([, m]) => (m.state === 'toyou' || m.state === 'both')).sort((a, b) => b[1].at - a[1].at)[0];
     const row = toyou && rowFor(toyou[0]);
     if (row) { row.scrollIntoView({ block: 'center', behavior: 'smooth' }); return; }
     openSettings();
   });
   function renderPill() {
-    const toyou = [...marks.values()].filter(m => m.state === 'toyou').length;
+    const toyou = [...marks.values()].filter(m => (m.state === 'toyou' || m.state === 'both')).length;
     const who = [...names.keys()].slice(0, peers).join(', ');
     const state = toyou ? 'toyou' : status;
     const text = toyou ? `→ ${toyou} for you` : status === 'on' ? (peers ? `● Pair · ${who || peers + ' connected'}` : '● Pair · waiting')
@@ -288,6 +304,9 @@
     ${CHAT} ${ROW}[data-pbn-pair="theirs"]::after, ${CHAT} ${ROW}[data-pbn-pair="passed"]::after { color: #c4b49a; }
     ${CHAT} ${ROW}[data-pbn-pair="toyou"] { border-left-color: #e0b84a; background: #e0b84a1f; animation: pbn-pair-glow 1.6s ease-in-out 3; }
     ${CHAT} ${ROW}[data-pbn-pair="toyou"]::after { background: #e0b84a; border-color: #e0b84a; color: #1a1208; font-weight: 600; }
+    ${CHAT} ${ROW}[data-pbn-pair="both"] { border-left-color: #f0906a; background: #f0906a1f; animation: pbn-pair-glow-warn 1.6s ease-in-out 3; }
+    ${CHAT} ${ROW}[data-pbn-pair="both"]::after { background: #f0906a; border-color: #f0906a; color: #1a1208; font-weight: 600; }
+    @keyframes pbn-pair-glow-warn { 50% { background: #f0906a44; box-shadow: inset 0 0 0 1px #f0906a88; } }
     @keyframes pbn-pair-glow { 50% { background: #e0b84a44; box-shadow: inset 0 0 0 1px #e0b84a88; } }
     #pbn-pair-bar { position: fixed; z-index: 2600; display: flex; gap: 4px; padding: 3px; background: #1f1f26f2; border: 1px solid #6b5836; border-radius: 6px; box-shadow: 0 4px 14px #000a; }
     #pbn-pair-bar[hidden] { display: none; }
