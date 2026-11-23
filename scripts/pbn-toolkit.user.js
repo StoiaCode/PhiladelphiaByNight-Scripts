@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.21.4
+// @version      1.21.5
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.21.4';
+  const TK_VERSION = '1.21.5';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -3170,13 +3170,17 @@
         }
         return anonOf.get(id);
       }
-      const SHOT_SUBJECT = /^(?!you\b|someone\b|nobody\b)(.+?) (?:arrives|leaves|departs|enters|exits|heads|walks|runs|climbs|steps|slips|emerges|appears|disappears|vanishes|fades|wanders|moves|goes|comes|looks|whispers|stands|sits|lies|falls|rises|wakes|has entered|is)\b/;
+      // Not "Your mask is…", "The sanctity of Elysium leaves…", "It is…": those aren't people.
+      const SHOT_SUBJECT = /^(?!(?:you|your|yours|yourself|someone|something|nobody|the|it|its|this|that|there)\b)(.+?) (?:arrives|leaves|departs|enters|exits|heads|walks|runs|climbs|steps|slips|emerges|appears|disappears|vanishes|fades|wanders|moves|goes|comes|looks|whispers|stands|sits|lies|falls|rises|wakes|has entered|is)\b/;
       const ROOM_TAG = 'span.text-amber-6';
       // Names anywhere in the chat text (people saying them, too), each
       // replaced with that person's colour: the full name and each part of
-      // it, as whole words. Yours (character, journal, and a borrowed face:
-      // "To others, you are still Jane Doe.") and every game name seen this
-      // session or saved; short descs aren't matched inside text.
+      // it, as whole capitalised words ("York" in a name doesn't hit "york").
+      // Yours (character, journal, and a borrowed face: "To others, you are
+      // still Jane Doe."), everyone in the room or seen this session, and
+      // people you've named or noted. Not everyone you ever looked at: that
+      // archive is too big and censors ordinary words. Short descs aren't
+      // matched inside text.
       const myAliases = new Set();
       // Your own names as the game tracks them: your real name, the alias you
       // introduce yourself with, and a Mask of a Thousand Faces persona. The
@@ -3226,13 +3230,17 @@
       }
       // Titles and particles aren't matched on their own.
       const NOT_A_NAME = new Set(['the', 'and', 'von', 'van', 'der', 'den', 'del', 'della', 'des', 'mac', 'sir', 'lord', 'lady', 'dame',
-        'miss', 'mister', 'mrs', 'father', 'mother', 'sister', 'brother', 'doctor', 'saint', 'uncle', 'aunt']);
+        'miss', 'mister', 'mrs', 'father', 'mother', 'sister', 'brother', 'doctor', 'saint', 'uncle', 'aunt',
+        'you', 'your', 'yours', 'him', 'her', 'his', 'she', 'they', 'them', 'new', 'old', 'young', 'little', 'big']);
       const looksLikeName = t => !/,/.test(t) && !isSelf(t) && t.split(/\s+/).length <= 4 && t.split(/\s+/).every(w => /^\p{Lu}/u.test(w));
       function nameMatcher() {
-        const who = new Map(); // lowercased name or part -> whose; a colour is only given out once it shows up
+        const who = new Map(); // name or part, as written -> whose; a colour is only given out once it shows up
         const addName = (n, a) => {
-          for (const part of [n, ...n.split(/[\s-]+/).filter(w => w.length >= 3 && !NOT_A_NAME.has(w.toLowerCase()))]) {
-            if (!who.has(part.toLowerCase())) who.set(part.toLowerCase(), a);
+          if (NOT_A_NAME.has(n.toLowerCase())) return;
+          // Parts: each word ("Yoon-Ah") and each piece of a hyphenated one ("Yoon").
+          const words = [...n.split(/\s+/), ...n.split(/[\s-]+/)];
+          for (const part of [n, ...words.filter(w => w.length >= 3 && /^\p{Lu}/u.test(w) && !NOT_A_NAME.has(w.toLowerCase()))]) {
+            if (!who.has(part)) who.set(part, a);
           }
         };
         // Yours first, so a shared first name stays yours. The journal can
@@ -3240,12 +3248,12 @@
         const me = bookChar;
         const journal = document.querySelector('.journal-title')?.textContent.trim().match(/^(.+?)['’]s Journal$/)?.[1];
         for (const n of [bookChar !== 'default' ? bookChar : null, journal, ...ownNames(), ...myAliases]) if (n) addName(n, me);
-        const others = [...seenNames.values(), ...Object.values(book).flatMap(x => x.looks), ...Object.values(looksFor()).map(v => v.orig).filter(Boolean)];
+        const others = [...seenNames.values(), ...Object.values(book).flatMap(x => x.looks)];
         for (const n of others) if (looksLikeName(n) && !isMe(n)) addName(n, n);
         if (!who.size) return null;
         const esc = w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const parts = [...who.keys()].sort((a, b) => b.length - a.length).map(esc);
-        return { re: new RegExp(`(?<![\\p{L}\\p{N}])(?:${parts.join('|')})(?![\\p{L}\\p{N}])`, 'giu'), who };
+        return { re: new RegExp(`(?<![\\p{L}\\p{N}])(?:${parts.join('|')})(?![\\p{L}\\p{N}])`, 'gu'), who };
       }
       function hideRooms(root) {
         // "[LOCATION] You are in Some Place": everything after the label goes.
@@ -3279,7 +3287,7 @@
           let last = 0;
           re.lastIndex = 0;
           for (const m of t.matchAll(re)) {
-            const a = anonFor(who.get(m[0].toLowerCase()));
+            const a = anonFor(who.get(m[0]));
             const sp = c.el('span', { className: `pbn-shot-me ${NM}--anon`, textContent: a.label });
             sp.dataset.pbnShotMe = m[0];
             sp.style.setProperty('--pbn-anon', a.color);
