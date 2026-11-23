@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.21.5
+// @version      1.21.6
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.21.5';
+  const TK_VERSION = '1.21.6';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -3177,10 +3177,9 @@
       // replaced with that person's colour: the full name and each part of
       // it, as whole capitalised words ("York" in a name doesn't hit "york").
       // Yours (character, journal, and a borrowed face: "To others, you are
-      // still Jane Doe."), everyone in the room or seen this session, and
-      // people you've named or noted. Not everyone you ever looked at: that
-      // archive is too big and censors ordinary words. Short descs aren't
-      // matched inside text.
+      // still Jane Doe.") and those of the people who are there (see
+      // nameMatcher). Someone who isn't there stays readable when mentioned.
+      // Short descs aren't matched inside text.
       const myAliases = new Set();
       // Your own names as the game tracks them: your real name, the alias you
       // introduce yourself with, and a Mask of a Thousand Faces persona. The
@@ -3248,7 +3247,13 @@
         const me = bookChar;
         const journal = document.querySelector('.journal-title')?.textContent.trim().match(/^(.+?)['’]s Journal$/)?.[1];
         for (const n of [bookChar !== 'default' ? bookChar : null, journal, ...ownNames(), ...myAliases]) if (n) addName(n, me);
-        const others = [...seenNames.values(), ...Object.values(book).flatMap(x => x.looks)];
+        // Only people who are there: in the room now, or speaking in the chat
+        // on screen (someone who has left still has their lines in the
+        // picture). Plus the other names you know a present person by.
+        const present = [...[...hereNow.values()].map(p => p.name),
+          ...[...document.querySelectorAll(`${CHAT} [class*="chat-name"] .${NM}`)].map(sp => sp.dataset.pbnNmOrig)];
+        const others = new Set();
+        for (const n of present) { if (!n) continue; others.add(n); (personOf(n)?.looks || []).forEach(l => others.add(l)); }
         for (const n of others) if (looksLikeName(n) && !isMe(n)) addName(n, n);
         if (!who.size) return null;
         const esc = w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
