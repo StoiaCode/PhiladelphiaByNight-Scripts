@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.22.0
+// @version      1.22.1
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.22.0';
+  const TK_VERSION = '1.22.1';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -4697,12 +4697,12 @@
   defineModule({
     id: 'touches',
     name: 'Night Touches',
-    description: 'Small visual touches: a bat crosses the chat at midnight game time, a botch makes the screen flinch, three or more 10s in one of your rolls run blood down the chat, and the edges glow with dawn in the last half hour before 6 AM.',
+    description: 'Small visual touches: a bat crosses the chat at midnight game time, a botch makes the screen flinch, three or more 10s in one of your rolls run blood down the chat, and the edges glow with dawn in the last 10 game minutes before 6 AM.',
     note: 'Only on your screen; nothing is sent. The roll effects need the Roll Log switched on. With "reduce motion" set in your system, only the dawn glow shows.',
     settings: [
       { key: 'bat', label: 'A bat at midnight (game time)', type: 'toggle', default: true },
       { key: 'rolls', label: 'Botches flinch, three or more 10s bleed', type: 'toggle', default: true },
-      { key: 'dawn', label: 'Dawn glow in the last half hour before 6 AM', type: 'toggle', default: true },
+      { key: 'dawn', label: 'Dawn glow in the last 10 game minutes before 6 AM (20 real minutes)', type: 'toggle', default: true },
     ],
     actions: [
       { label: 'Preview: bat', run: () => touchesApi?.bat() },
@@ -4743,17 +4743,20 @@
         const box = chatBox();
         const r = box ? box.getBoundingClientRect() : { left: 0, right: innerWidth, top: innerHeight * 0.2, height: innerHeight * 0.5 };
         const up = svg('0 0 64 34', 56, 30, BODY + WINGS_UP), down = svg('0 0 64 34', 56, 30, BODY + WINGS_DOWN);
-        down.style.position = 'absolute'; down.style.inset = '0';
+        down.style.position = 'absolute'; down.style.inset = '0'; down.style.opacity = '0'; // only one frame shows outside the beats too
         const flap = c.el('div', { className: 'pbn-bat' }, up, down);
         const fly = c.el('div', { className: 'pbn-bat-fly' }, flap);
+        // Across the whole window, from just past one edge to just past the other,
+        // at a height over the chat.
         const y = r.top + r.height * (0.15 + Math.random() * 0.35);
         const ltr = Math.random() < 0.5;
+        const W = document.documentElement.clientWidth;
         fly.style.top = y + 'px';
-        fly.style.left = (ltr ? r.left - 60 : r.right + 10) + 'px';
+        fly.style.left = (ltr ? -70 : W + 10) + 'px';
         if (!ltr) flap.style.transform = 'scaleX(-1)';
         document.body.append(fly);
-        const dist = (r.right - r.left + 70) * (ltr ? 1 : -1);
-        const dur = 3600 + Math.random() * 900;
+        const dist = (W + 80) * (ltr ? 1 : -1);
+        const dur = 4200 + Math.random() * 1200;
         // swooping flight: across, with a dip and a rise
         fly.animate([
           { transform: 'translate(0, 0)' },
@@ -4761,8 +4764,10 @@
           { transform: `translate(${dist * 0.6}px, -14px)` },
           { transform: `translate(${dist}px, -40px)` },
         ], { duration: dur, easing: 'ease-in-out' }).onfinish = () => fly.remove();
-        down.animate([{ opacity: 0 }, { opacity: 1 }, { opacity: 0 }], { duration: 230, iterations: Math.ceil(dur / 230), easing: 'steps(2, jump-none)' });
-        up.animate([{ opacity: 1 }, { opacity: 0 }, { opacity: 1 }], { duration: 230, iterations: Math.ceil(dur / 230), easing: 'steps(2, jump-none)' });
+        // Wing beats: a hard swap between the two frames halfway through each beat.
+        const BEAT = 240, beats = Math.ceil(dur / BEAT);
+        up.animate([{ opacity: 1 }, { opacity: 1, offset: 0.5 }, { opacity: 0, offset: 0.5 }, { opacity: 0 }], { duration: BEAT, iterations: beats });
+        down.animate([{ opacity: 0 }, { opacity: 0, offset: 0.5 }, { opacity: 1, offset: 0.5 }, { opacity: 1 }], { duration: BEAT, iterations: beats });
       }
 
       // ---- A botch: the chat column flinches.
@@ -4796,14 +4801,14 @@
         }
       }
 
-      // ---- Dawn: the screen edges warm up over the last half hour (game time) before 6 AM.
+      // ---- Dawn: the screen edges warm up over the last 10 game minutes (20 real ones) before 6 AM.
       let glow = null;
       function setGlow(f) {
         if (f <= 0) { glow?.remove(); glow = null; return; }
         if (!glow) { glow = c.el('div', { className: 'pbn-dawn' }); document.body.append(glow); }
         glow.style.setProperty('--pbn-dawn', String(Math.min(1, f)));
       }
-      const dawnLevel = gm => (gm >= 330 && gm < 360 ? (gm - 330 + 1) / 30 : 0); // 5:30 AM → 6:00 AM
+      const dawnLevel = gm => (gm >= 350 && gm < 360 ? (gm - 350 + 1) / 10 : 0); // 5:50 AM → 6:00 AM
       let preview = 0;
       function dawnPreview() {
         const start = Date.now();
