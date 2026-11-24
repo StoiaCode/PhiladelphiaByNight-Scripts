@@ -38,6 +38,7 @@ require no account or server-side setup.
   - [The name editor](#the-name-editor)
   - [Screenshot mode](#screenshot-mode)
 - [Who's Here (toolkit only)](#whos-here-toolkit-only)
+- [Night Touches (toolkit only)](#night-touches-toolkit-only)
 - [Playtime (toolkit only)](#playtime-toolkit-only)
 - [Roll Log (toolkit only)](#roll-log-toolkit-only)
 - [Reminders (toolkit only)](#reminders-toolkit-only)
@@ -78,7 +79,7 @@ press **Alt+Shift+T** anywhere on the site).
 
 New features only go into the toolkit, and several exist only there:
 [Personal Names, Notes & Dossiers](#personal-names-notes--dossiers-toolkit-only),
-[Who's Here](#whos-here-toolkit-only), [Playtime](#playtime-toolkit-only), [Roll Log](#roll-log-toolkit-only), [Reminders](#reminders-toolkit-only),
+[Who's Here](#whos-here-toolkit-only), [Night Touches](#night-touches-toolkit-only), [Playtime](#playtime-toolkit-only), [Roll Log](#roll-log-toolkit-only), [Reminders](#reminders-toolkit-only),
 [24-Hour Clock & Celsius](#24-hour-clock--celsius-toolkit-only-off-by-default),
 and parts of the others (marked *toolkit only* below).
 
@@ -527,6 +528,19 @@ The game's line above the chat only says *You are not alone here.* Who's Here ad
 - **Crowds stay small.** The list shows two rows and scrolls after that (*Rows shown before the list scrolls* in the toolkit panel changes it). With more than ten people the names get a bit smaller. Long names and aliases are cut off with "…"; hover for the whole thing.
 
 A new short desc or a new name counts as someone leaving and someone else arriving, the same as it would for your character. In screenshot mode the list shows everyone's colour instead.
+
+---
+
+## Night Touches (toolkit only)
+
+A few small things, just for the look of it:
+
+- **A bat** flaps across the chat when the game clock strikes midnight.
+- **A botch** in one of your rolls makes the chat flinch.
+- **Three or more 10s** in one of your rolls run a few drops of blood down the chat.
+- **Dawn:** in the last half hour of game time before 6 AM, the edges of the screen glow warmer and warmer.
+
+Each has its own switch in the toolkit panel, which also has buttons to preview them. Only your screen shows them; nothing is sent. The roll effects need the [Roll Log](#roll-log-toolkit-only) switched on. If your system is set to reduce motion, only the dawn glow shows.
 
 ---
 

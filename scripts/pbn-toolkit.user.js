@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.21.6
+// @version      1.22.0
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.21.6';
+  const TK_VERSION = '1.22.0';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -4689,6 +4689,179 @@
   });
 
   // ==========================================================================
+  // MODULE: Night Touches
+  // ==========================================================================
+
+  let touchesApi = null;
+
+  defineModule({
+    id: 'touches',
+    name: 'Night Touches',
+    description: 'Small visual touches: a bat crosses the chat at midnight game time, a botch makes the screen flinch, three or more 10s in one of your rolls run blood down the chat, and the edges glow with dawn in the last half hour before 6 AM.',
+    note: 'Only on your screen; nothing is sent. The roll effects need the Roll Log switched on. With "reduce motion" set in your system, only the dawn glow shows.',
+    settings: [
+      { key: 'bat', label: 'A bat at midnight (game time)', type: 'toggle', default: true },
+      { key: 'rolls', label: 'Botches flinch, three or more 10s bleed', type: 'toggle', default: true },
+      { key: 'dawn', label: 'Dawn glow in the last half hour before 6 AM', type: 'toggle', default: true },
+    ],
+    actions: [
+      { label: 'Preview: bat', run: () => touchesApi?.bat() },
+      { label: 'Preview: botch', run: () => touchesApi?.flinch() },
+      { label: 'Preview: blood', run: () => touchesApi?.bleed() },
+      { label: 'Preview: dawn', run: () => touchesApi?.dawnPreview() },
+    ],
+    start(c) {
+      const BAT = opt('touches', 'bat', true), ROLLS = opt('touches', 'rolls', true), DAWN = opt('touches', 'dawn', true);
+      const calm = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      const chatBox = () => document.querySelector('.chat-container');
+      const chatColumn = () => document.querySelector('main.q-page > .col-md-8') || chatBox()?.parentElement;
+      const SVGNS = 'http://www.w3.org/2000/svg';
+      const svg = (vb, w, h, inner) => {
+        const s = document.createElementNS(SVGNS, 'svg');
+        s.setAttribute('viewBox', vb); s.setAttribute('width', w); s.setAttribute('height', h); s.setAttribute('aria-hidden', 'true');
+        s.innerHTML = inner;
+        return s;
+      };
+
+      // ---- Game clock, from what the Reminders module learned (pbn-game-clock):
+      // 6 PM to 6 AM over one real day at half speed.
+      const nightStart = () => {
+        try { const v = JSON.parse(localStorage.getItem('pbn-game-clock') || 'null'); if (Number.isFinite(v?.start)) return v.start; } catch (e) { /* default */ }
+        return 15 * 60;
+      };
+      const gameMin = (ms = Date.now()) => {
+        const u = Math.floor(ms / 60000) % 1440;
+        return (18 * 60 + Math.floor((((u - nightStart()) % 1440 + 1440) % 1440) / 2)) % 1440;
+      };
+
+      // ---- The bat: two wing positions, swapped while it flies across the chat.
+      const BODY = '<ellipse cx="32" cy="19" rx="3.6" ry="5.5"/><path d="M29.2 15 L29.8 10.2 L31.4 13.4 L32.6 13.4 L34.2 10.2 L34.8 15 Z"/>';
+      const WINGS_UP = '<path d="M32 19 C28 11 20 5 5 3 C9 8 9.5 12 7.5 16 C13 14.5 17.5 16 21.5 20 C25.5 18 29 19.5 32 22 C35 19.5 38.5 18 42.5 20 C46.5 16 51 14.5 56.5 16 C54.5 12 55 8 59 3 C44 5 36 11 32 19 Z"/>';
+      const WINGS_DOWN = '<path d="M32 17 C26 17 17 21 7 30 C13 28 17 28.5 19.5 31 C23.5 27 28 25 32 27 C36 25 40.5 27 44.5 31 C47 28.5 51 28 57 30 C47 21 38 17 32 17 Z"/>';
+      function bat() {
+        if (calm()) return;
+        const box = chatBox();
+        const r = box ? box.getBoundingClientRect() : { left: 0, right: innerWidth, top: innerHeight * 0.2, height: innerHeight * 0.5 };
+        const up = svg('0 0 64 34', 56, 30, BODY + WINGS_UP), down = svg('0 0 64 34', 56, 30, BODY + WINGS_DOWN);
+        down.style.position = 'absolute'; down.style.inset = '0';
+        const flap = c.el('div', { className: 'pbn-bat' }, up, down);
+        const fly = c.el('div', { className: 'pbn-bat-fly' }, flap);
+        const y = r.top + r.height * (0.15 + Math.random() * 0.35);
+        const ltr = Math.random() < 0.5;
+        fly.style.top = y + 'px';
+        fly.style.left = (ltr ? r.left - 60 : r.right + 10) + 'px';
+        if (!ltr) flap.style.transform = 'scaleX(-1)';
+        document.body.append(fly);
+        const dist = (r.right - r.left + 70) * (ltr ? 1 : -1);
+        const dur = 3600 + Math.random() * 900;
+        // swooping flight: across, with a dip and a rise
+        fly.animate([
+          { transform: 'translate(0, 0)' },
+          { transform: `translate(${dist * 0.3}px, 26px)` },
+          { transform: `translate(${dist * 0.6}px, -14px)` },
+          { transform: `translate(${dist}px, -40px)` },
+        ], { duration: dur, easing: 'ease-in-out' }).onfinish = () => fly.remove();
+        down.animate([{ opacity: 0 }, { opacity: 1 }, { opacity: 0 }], { duration: 230, iterations: Math.ceil(dur / 230), easing: 'steps(2, jump-none)' });
+        up.animate([{ opacity: 1 }, { opacity: 0 }, { opacity: 1 }], { duration: 230, iterations: Math.ceil(dur / 230), easing: 'steps(2, jump-none)' });
+      }
+
+      // ---- A botch: the chat column flinches.
+      function flinch() {
+        if (calm()) return;
+        const col = chatColumn() || document.body;
+        col.animate([
+          { transform: 'translate(0, 0)' }, { transform: 'translate(-7px, 2px) rotate(-0.4deg)' }, { transform: 'translate(6px, -2px) rotate(0.3deg)' },
+          { transform: 'translate(-4px, 1px)' }, { transform: 'translate(3px, 0)' }, { transform: 'translate(0, 0)' },
+        ], { duration: 380, easing: 'ease-out' });
+      }
+
+      // ---- Three or more 10s: a few drops of blood run down from the top of the chat.
+      const DROP = '<path d="M6 0 C6 0 0.5 8.5 0.5 12.5 A5.5 5.5 0 0 0 11.5 12.5 C11.5 8.5 6 0 6 0 Z" fill="#7d0a0e"/><ellipse cx="4" cy="12" rx="1.4" ry="2.2" fill="#e0606066"/>';
+      function bleed() {
+        if (calm()) return;
+        const box = chatBox();
+        const r = box ? box.getBoundingClientRect() : { left: innerWidth * 0.2, width: innerWidth * 0.6, top: 0, height: innerHeight * 0.6 };
+        const n = 3 + Math.floor(Math.random() * 3);
+        for (let i = 0; i < n; i++) {
+          const x = r.left + 12 + Math.random() * (r.width - 36);
+          const len = r.height * (0.25 + Math.random() * 0.45);
+          const drip = c.el('div', { className: 'pbn-drip' }, c.el('div', { className: 'pbn-drip__trail' }), svg('0 0 12 19', 12, 19, DROP));
+          drip.style.left = x + 'px';
+          drip.style.top = r.top + 'px';
+          document.body.append(drip);
+          const delay = i * 180 + Math.random() * 250, dur = 1700 + Math.random() * 1300;
+          drip.querySelector('.pbn-drip__trail').animate([{ height: '0px' }, { height: len + 'px' }], { duration: dur, delay, easing: 'cubic-bezier(.5,0,.8,.6)', fill: 'forwards' });
+          drip.querySelector('svg').animate([{ transform: 'translate(-50%, 0)' }, { transform: `translate(-50%, ${len}px)` }], { duration: dur, delay, easing: 'cubic-bezier(.5,0,.8,.6)', fill: 'forwards' });
+          drip.animate([{ opacity: 1 }, { opacity: 1, offset: 0.7 }, { opacity: 0 }], { duration: dur + 1600, delay, fill: 'forwards' }).onfinish = () => drip.remove();
+        }
+      }
+
+      // ---- Dawn: the screen edges warm up over the last half hour (game time) before 6 AM.
+      let glow = null;
+      function setGlow(f) {
+        if (f <= 0) { glow?.remove(); glow = null; return; }
+        if (!glow) { glow = c.el('div', { className: 'pbn-dawn' }); document.body.append(glow); }
+        glow.style.setProperty('--pbn-dawn', String(Math.min(1, f)));
+      }
+      const dawnLevel = gm => (gm >= 330 && gm < 360 ? (gm - 330 + 1) / 30 : 0); // 5:30 AM → 6:00 AM
+      let preview = 0;
+      function dawnPreview() {
+        const start = Date.now();
+        preview = start;
+        const step = () => {
+          if (preview !== start) return;
+          const t = (Date.now() - start) / 6000;
+          if (t >= 1.4) { preview = 0; tick(); return; }
+          setGlow(Math.min(1, t));
+          requestAnimationFrame(step);
+        };
+        step();
+      }
+
+      touchesApi = { bat, flinch, bleed, dawnPreview };
+
+      // ---- Triggers
+      let lastGm = null, timer = null;
+      function tick() {
+        const gm = gameMin();
+        if (BAT && lastGm !== null && lastGm >= 1380 && gm < 60 && !document.hidden) bat(); // just struck midnight
+        lastGm = gm;
+        if (!preview) setGlow(DAWN ? dawnLevel(gm) : 0);
+      }
+      const onRoll = e => {
+        if (!ROLLS || document.hidden) return;
+        const d = e.detail || {};
+        if (d.botch) flinch();
+        else if (d.tens >= 3) bleed();
+      };
+
+      c.addStyle(String.raw`
+        .pbn-bat-fly { position: fixed; z-index: 2400; pointer-events: none; }
+        .pbn-bat { position: relative; width: 56px; height: 30px; }
+        .pbn-bat svg { display: block; fill: #33191f; filter: drop-shadow(0 0 1px #f3e6cfcc) drop-shadow(0 0 6px #e0b84a66); }
+        .pbn-drip { position: fixed; z-index: 2400; pointer-events: none; width: 0; }
+        .pbn-drip__trail { position: absolute; left: -1.5px; top: 0; width: 3px; border-radius: 0 0 2px 2px; background: linear-gradient(#4a0306, #7d0a0e); }
+        .pbn-drip svg { position: absolute; left: 0; top: 0; display: block; filter: drop-shadow(0 1px 1px #000a); }
+        .pbn-dawn {
+          position: fixed; inset: 0; z-index: 2300; pointer-events: none; transition: box-shadow 2s linear;
+          box-shadow: inset 0 0 calc(40px + 90px * var(--pbn-dawn, 0)) calc(4px + 26px * var(--pbn-dawn, 0)) rgba(255, 128, 40, calc(0.08 + 0.32 * var(--pbn-dawn, 0)));
+        }
+      `);
+
+      c.onRoute(c.isPlay, () => {
+        lastGm = null;
+        tick();
+        timer = setInterval(tick, 10000);
+        window.addEventListener('pbn-roll', onRoll);
+      }, () => {
+        clearInterval(timer);
+        window.removeEventListener('pbn-roll', onRoll);
+        setGlow(0);
+      });
+    },
+  });
+
+  // ==========================================================================
   // MODULE: Playtime
   // ==========================================================================
 
@@ -4873,7 +5046,11 @@
           seen.add(m.__v_raw || m);
           if (m.isHistory) continue;
           const r = parseCard(m.html || '');
-          if (r) record(r);
+          if (r) {
+            record(r);
+            // For Night Touches: a live roll of yours (never history, never the Roll Sampler's).
+            if (!document.documentElement.dataset.pbnRsRunning) window.dispatchEvent(new CustomEvent('pbn-roll', { detail: { botch: r.botch, tens: r.tens, dice: r.dice } }));
+          }
         }
       }
       let hooked = null;
