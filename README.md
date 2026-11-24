@@ -540,7 +540,7 @@ A few small things, just for the look of it:
 - **Three or more 10s** in one of your rolls run a few drops of blood down the chat.
 - **Dawn:** in the last 10 game minutes before 6 AM (20 real minutes), the edges of the screen glow warmer and warmer.
 
-Each has its own switch in the toolkit panel, which also has buttons to preview them. Only your screen shows them; nothing is sent. The roll effects need the [Roll Log](#roll-log-toolkit-only) switched on. If your system is set to reduce motion, only the dawn glow shows.
+Each has its own switch in the toolkit panel; the faint ▸ at the end of a switch's line shows you what it looks like. The roll effects need the [Roll Log](#roll-log-toolkit-only) switched on. If your system is set to reduce motion, only the dawn glow shows.
 
 ---
 

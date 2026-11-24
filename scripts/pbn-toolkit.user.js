@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PbN Toolkit
 // @namespace    stoia.red
-// @version      1.22.1
+// @version      1.22.2
 // @description  All the PbN userscripts in one, each switchable, with a settings panel (in-game Settings tab → Open PbN Toolkit).
 // @match        https://philadelphiabynight.net/*
 // @match        https://map.stoia.red/*
@@ -19,7 +19,7 @@
     return;
   }
 
-  const TK_VERSION = '1.22.1';
+  const TK_VERSION = '1.22.2';
   const SETTINGS_KEY = 'pbn-toolkit';
   const LOG = (...a) => console.warn('[PbN Toolkit]', ...a);
 
@@ -4697,18 +4697,13 @@
   defineModule({
     id: 'touches',
     name: 'Night Touches',
-    description: 'Small visual touches: a bat crosses the chat at midnight game time, a botch makes the screen flinch, three or more 10s in one of your rolls run blood down the chat, and the edges glow with dawn in the last 10 game minutes before 6 AM.',
-    note: 'Only on your screen; nothing is sent. The roll effects need the Roll Log switched on. With "reduce motion" set in your system, only the dawn glow shows.',
+    description: 'A few small visual touches.',
+    note: 'The roll ones need the Roll Log.',
     settings: [
-      { key: 'bat', label: 'A bat at midnight (game time)', type: 'toggle', default: true },
-      { key: 'rolls', label: 'Botches flinch, three or more 10s bleed', type: 'toggle', default: true },
-      { key: 'dawn', label: 'Dawn glow in the last 10 game minutes before 6 AM (20 real minutes)', type: 'toggle', default: true },
-    ],
-    actions: [
-      { label: 'Preview: bat', run: () => touchesApi?.bat() },
-      { label: 'Preview: botch', run: () => touchesApi?.flinch() },
-      { label: 'Preview: blood', run: () => touchesApi?.bleed() },
-      { label: 'Preview: dawn', run: () => touchesApi?.dawnPreview() },
+      { key: 'bat', label: 'A bat at midnight', type: 'toggle', default: true, preview: () => touchesApi?.bat() },
+      { key: 'rolls', label: 'Botches flinch, three 10s bleed', type: 'toggle', default: true,
+        preview: () => { touchesApi?.flinch(); setTimeout(() => touchesApi?.bleed(), 700); } },
+      { key: 'dawn', label: 'Dawn glow before 6 AM', type: 'toggle', default: true, preview: () => touchesApi?.dawnPreview() },
     ],
     start(c) {
       const BAT = opt('touches', 'bat', true), ROLLS = opt('touches', 'rolls', true), DAWN = opt('touches', 'dawn', true);
@@ -5631,6 +5626,12 @@
       background: #0d0707; color: #e8ddd0; border: 1px solid #5a1212; border-radius: 4px; padding: 3px 6px; font: inherit; font-size: .95rem;
     }
     .pbn-tk-mod__opt input[type=number] { width: 5em; }
+    .pbn-tk-mod__peek {
+      margin-left: -4px; padding: 0 6px; border: 0; background: none; cursor: pointer;
+      color: #9a8a7a; font: inherit; font-size: .9rem; line-height: 1; opacity: .3;
+    }
+    .pbn-tk-mod__opt:hover .pbn-tk-mod__peek, .pbn-tk-mod__peek:focus-visible { opacity: .75; }
+    .pbn-tk-mod__peek:hover { opacity: 1; color: #e0b84a; }
     .pbn-tk-mod__opt input[type=checkbox] { accent-color: #9e2b2b; width: 16px; height: 16px; margin: 0; }
     .pbn-tk-mod__opts .pbn-tk-btn { align-self: flex-start; }
     .pbn-tk-mod--off .pbn-tk-mod__opts { opacity: .5; }
@@ -5719,7 +5720,14 @@
           if (def.type === 'toggle') {
             control = el('input', { type: 'checkbox', checked: !!cur });
             control.addEventListener('change', () => setOpt(control.checked));
-            opts.append(el('label', { className: 'pbn-tk-mod__opt' }, control, def.label));
+            // A toggle can bring a quiet preview: a faint ▸ at the end of its line.
+            let peek = null;
+            if (def.preview && status[m.id] === 'on') {
+              peek = el('button', { type: 'button', className: 'pbn-tk-mod__peek', textContent: '▸', title: 'Preview' });
+              peek.setAttribute('aria-label', 'Preview: ' + def.label);
+              peek.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); close(); def.preview(); });
+            }
+            opts.append(el('label', { className: 'pbn-tk-mod__opt' }, control, def.label, peek));
             return;
           }
           if (def.type === 'select') {
